@@ -101,7 +101,107 @@ const io = new Server(server, {
 app.set('io', io);
 
 app.set('trust proxy', 1);
-app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+const jitsiOrigin = (() => {
+  const raw = String(
+    process.env.JITSI_SERVER_URL ||
+    process.env.VITE_JITSI_SERVER_URL ||
+    'https://42.96.12.227',
+  )
+    .trim()
+    .replace(/\/+$/, '');
+
+  try {
+    return new URL(raw).origin;
+  } catch {
+    return 'https://42.96.12.227';
+  }
+})();
+
+const jitsiWebSocketOrigin = jitsiOrigin
+  .replace(/^https:/, 'wss:')
+  .replace(/^http:/, 'ws:');
+
+app.use(
+  helmet({
+    crossOriginResourcePolicy: {
+      policy: 'cross-origin',
+    },
+
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+
+        scriptSrc: [
+          "'self'",
+          jitsiOrigin,
+        ],
+
+        scriptSrcElem: [
+          "'self'",
+          jitsiOrigin,
+        ],
+
+        styleSrc: [
+          "'self'",
+          "'unsafe-inline'",
+          'https:',
+        ],
+
+        styleSrcElem: [
+          "'self'",
+          "'unsafe-inline'",
+          'https:',
+        ],
+
+        imgSrc: [
+          "'self'",
+          'data:',
+          'blob:',
+          'https:',
+        ],
+
+        fontSrc: [
+          "'self'",
+          'data:',
+          'https:',
+        ],
+
+        connectSrc: [
+          "'self'",
+          jitsiOrigin,
+          jitsiWebSocketOrigin,
+        ],
+
+        frameSrc: [
+          "'self'",
+          jitsiOrigin,
+        ],
+
+        childSrc: [
+          "'self'",
+          jitsiOrigin,
+          'blob:',
+        ],
+
+        mediaSrc: [
+          "'self'",
+          'blob:',
+          jitsiOrigin,
+        ],
+
+        workerSrc: [
+          "'self'",
+          'blob:',
+        ],
+
+        objectSrc: ["'none'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
+        frameAncestors: ["'self'"],
+      },
+    },
+  }),
+);
 app.use(
   '/api',
   cors({
