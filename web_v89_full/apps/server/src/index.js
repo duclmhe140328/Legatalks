@@ -33,11 +33,65 @@ await connectDatabase();
 
 const app = express();
 const server = http.createServer(app);
-const isAllowedOrigin = (origin, callback) => {
-  if (!origin || env.clientUrls.includes(origin)) return callback(null, true);
-  if (env.nodeEnv !== 'production' && /^http:\/\/(?:localhost|127\.0\.0\.1|10\.|172\.(?:1[6-9]|2\d|3[01])\.|192\.168\.)/.test(origin)) return callback(null, true);
-  return callback(new Error(`CORS blocked origin: ${origin}`));
-};
+function normalizeOrigin(value) {
+  const raw = String(value || '').trim();
+
+  if (!raw) return '';
+
+  try {
+    return new URL(raw).origin;
+  } catch {
+    return raw.replace(/\/+$/, '');
+  }
+}
+
+const allowedOrigins = new Set(
+  [
+    process.env.CLIENT_URL,
+    process.env.PUBLIC_SERVER_URL,
+    process.env.RENDER_EXTERNAL_URL,
+    ...String(process.env.CLIENT_URLS || '').split(','),
+  ]
+    .map(normalizeOrigin)
+    .filter(Boolean),
+);
+
+function isAllowedOrigin(origin, callback) {
+  /*
+   * Một số request nội bộ, mobile app hoặc server-to-server
+   * không gửi Origin.
+   */
+  if (!origin) {
+    return callback(null, true);
+  }
+
+  const normalizedOrigin = normalizeOrigin(origin);
+
+  if (allowedOrigins.has(normalizedOrigin)) {
+    return callback(null, true);
+  }
+
+  /*
+   * Cho phép localhost và IP LAN khi phát triển local.
+   */
+  if (
+    process.env.NODE_ENV !== 'production' &&
+    /^http:\/\/(?:localhost|127\.0\.0\.1|10\.|172\.(?:1[6-9]|2\d|3[01])\.|192\.168\.)/.test(
+      normalizedOrigin,
+    )
+  ) {
+    return callback(null, true);
+  }
+
+  console.error('CORS blocked origin:', {
+    received: normalizedOrigin,
+    allowed: [...allowedOrigins],
+  });
+
+  return callback(
+    new Error(`CORS blocked origin: ${normalizedOrigin}`),
+  );
+}
 
 const io = new Server(server, {
   cors: { origin: isAllowedOrigin, credentials: true },
@@ -48,9 +102,13 @@ app.set('io', io);
 
 app.set('trust proxy', 1);
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
-app.use(cors({ origin: isAllowedOrigin, credentials: true }));
-app.use(privacyResponseGuard);
-app.use(express.json({ limit: '10mb' }));
+app.use(
+  '/api',
+  cors({
+    origin: isAllowedOrigin,
+    credentials: true,
+  }),
+);app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use('/uploads', express.static(uploadRoot, { maxAge: '7d', immutable: false }));
 
