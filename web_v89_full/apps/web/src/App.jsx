@@ -21,8 +21,8 @@ function Protected({ children }) {
   if (loading) {
     return (
       <div className="splash">
-        <div className="brand-mark">N</div>
-        <p>Đang tải Nexora Connect…</p>
+        <img src="https://legatalk.io.vn/images/logo.png" alt="Legatalk Logo" className="brand-mark" />
+        <p>Đang tải Legatalk Connect…</p>
       </div>
     );
   }
@@ -38,8 +38,8 @@ function GuestRoute({ children }) {
   if (loading) {
     return (
       <div className="splash">
-        <div className="brand-mark">N</div>
-        <p>Đang tải Nexora Connect…</p>
+        <img src="https://legatalk.io.vn/images/logo.png" alt="Legatalk Logo" className="brand-mark" />
+        <p>Đang tải Legatalk Connect…</p>
       </div>
     );
   }

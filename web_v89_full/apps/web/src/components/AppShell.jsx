@@ -141,7 +141,7 @@ export default function AppShell() {
 
   const timelineHeaderTabs = [
     { href: '/timeline', label: 'Bảng tin', Icon: Home, active: () => timelineTab === 'feed' },
-    { href: '/timeline?tab=video', label: 'Video',Icon: Video, active: () => timelineTab === 'video' },
+    { href: '/timeline?tab=video', label: 'Video', Icon: Video, active: () => timelineTab === 'video' },
     { href: '/timeline?tab=groups', label: 'Nhóm', Icon: UsersRound, active: () => timelineTab === 'groups' },
     { href: '/timeline?tab=live', label: 'Livestream', Icon: Radio, active: () => timelineTab === 'live' },
   ];
@@ -232,7 +232,7 @@ export default function AppShell() {
 
   const openNotification = async (item) => {
     if (!item.readAt) {
-      await api.post(`/notifications/${item._id}/read`).catch(() => {});
+      await api.post(`/notifications/${item._id}/read`).catch(() => { });
       setNotifications((list) => list.map((entry) => (
         entry._id === item._id ? { ...entry, readAt: new Date().toISOString() } : entry
       )));
@@ -608,11 +608,43 @@ export default function AppShell() {
       </div>
 
       <nav className="fb-mobile-bottom-nav">
-        <NavLink to="/timeline"><Home size={22} /><span>Trang chủ</span></NavLink>
-        <NavLink to="/chats"><MessageCircleMore size={22} /><span>Tin nhắn</span>{unreadTotal > 0 && <i>{unreadTotal > 9 ? '9+' : unreadTotal}</i>}</NavLink>
-        <NavLink to="/meetings"><Video size={22} /><span>Họp</span></NavLink>
-        <NavLink to="/contacts"><ContactRound size={22} /><span>Bạn bè</span></NavLink>
-        <NavLink to="/profile"><UserRound size={22} /><span>Tôi</span></NavLink>
+        <NavLink to="/timeline">
+          <Home size={22} />
+          <span>Trang chủ</span>
+        </NavLink>
+
+        <NavLink to="/chats">
+          <MessageCircleMore size={22} />
+          <span>Tin nhắn</span>
+
+          {unreadTotal > 0 && (
+            <i>{unreadTotal > 9 ? '9+' : unreadTotal}</i>
+          )}
+        </NavLink>
+
+        <NavLink to="/meetings">
+          <Video size={22} />
+          <span>Họp</span>
+        </NavLink>
+
+        <NavLink to="/contacts">
+          <ContactRound size={22} />
+          <span>Bạn bè</span>
+        </NavLink>
+
+        <NavLink to="/notifications">
+          <Bell size={22} />
+          <span>Thông báo</span>
+
+          {unreadCount > 0 && (
+            <i>{unreadCount > 9 ? '9+' : unreadCount}</i>
+          )}
+        </NavLink>
+
+        <NavLink to="/profile">
+          <UserRound size={22} />
+          <span>Tôi</span>
+        </NavLink>
       </nav>
 
       {quickContact && (
