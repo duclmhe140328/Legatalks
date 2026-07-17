@@ -8,6 +8,7 @@ const DEFAULT_SERVER_URL =
 
 const ACTIVE_MEETING_KEY = 'nexoraActiveMeetingId';
 const loadedScripts = new Map();
+
 const GLOBAL_JITSI_REGISTRY_KEY = '__LEGATALK_JITSI_INSTANCE_REGISTRY__';
 
 function getJitsiInstanceRegistry() {
@@ -276,6 +277,54 @@ function allowScreenCapture(container) {
   iframe.setAttribute('allowfullscreen', 'true');
   iframe.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
   return true;
+}
+
+function refreshJitsiLayout(api, container) {
+  if (!container) return;
+
+  const iframe = container.querySelector?.('iframe');
+  if (!iframe) return;
+
+  const width = Math.max(
+    320,
+    Math.round(container.getBoundingClientRect().width || container.clientWidth || 0),
+  );
+  const height = Math.max(
+    240,
+    Math.round(container.getBoundingClientRect().height || container.clientHeight || 0),
+  );
+
+  iframe.style.position = 'absolute';
+  iframe.style.inset = '0';
+  iframe.style.display = 'block';
+  iframe.style.width = '100%';
+  iframe.style.height = '100%';
+  iframe.style.minWidth = '100%';
+  iframe.style.minHeight = '100%';
+  iframe.style.border = '0';
+
+  /* Force Chromium to rebuild the iframe compositor layer after the dock
+   * changes between a small floating window and the full viewport. */
+  iframe.style.transform = 'translateZ(0)';
+  iframe.style.opacity = '0.999';
+  void iframe.offsetHeight;
+
+  window.requestAnimationFrame(() => {
+    iframe.style.opacity = '1';
+    window.dispatchEvent(new Event('resize'));
+
+    try {
+      api?.resizeLargeVideo?.(width, height);
+    } catch {
+      // Older self-hosted Jitsi builds may not expose this function.
+    }
+
+    try {
+      api?.executeCommand?.('resizeLargeVideo', width, height);
+    } catch {
+      // Ignore when this command is not supported by the current build.
+    }
+  });
 }
 
 function mergedJitsiConfig({
@@ -745,6 +794,40 @@ export default function JitsiMeetFrame({
     currentUserId,
   ]);
 
+  useEffect(() => {
+    const container = parentRef.current;
+    if (!container) return undefined;
+
+    let animationFrame = 0;
+    const timers = [];
+
+    const refresh = () => {
+      window.cancelAnimationFrame(animationFrame);
+      animationFrame = window.requestAnimationFrame(() => {
+        allowScreenCapture(container);
+        refreshJitsiLayout(apiRef.current, container);
+      });
+    };
+
+    /* The route transition and fixed-dock CSS do not finish in one frame.
+     * Refresh a few times so Jitsi redraws after the final dimensions settle. */
+    [0, 80, 180, 350, 700].forEach((delay) => {
+      timers.push(window.setTimeout(refresh, delay));
+    });
+
+    const observer =
+      typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(refresh)
+        : null;
+
+    observer?.observe(container);
+
+    return () => {
+      observer?.disconnect();
+      timers.forEach((timer) => window.clearTimeout(timer));
+      window.cancelAnimationFrame(animationFrame);
+    };
+  }, [compact]);
 
   return (
     <section
@@ -756,7 +839,7 @@ export default function JitsiMeetFrame({
           <span>
             {compact
               ? 'Cuộc họp vẫn đang chạy — bạn có thể tiếp tục làm việc trên web'
-              : 'Legatalk · chia sẻ màn hình và các công cụ họp'}
+              : 'Jitsi Meet SDK · chia sẻ màn hình và các công cụ họp'}
           </span>
         </div>
 
@@ -781,9 +864,7 @@ export default function JitsiMeetFrame({
         </div>
       </div>
 
-      <div
-        className={`jitsi-container ${closed ? 'is-closed' : ''}`}
-      >
+      <div className={`jitsi-container ${closed ? 'is-closed' : ''}`}>
         {(status || error) && (
           <div className="jitsi-status jitsi-status-overlay">
             <div>
@@ -807,9 +888,6 @@ export default function JitsiMeetFrame({
             minWidth: 0,
             minHeight: 0,
             overflow: 'hidden',
-            transform: 'none',
-            opacity: 1,
-            visibility: 'visible',
           }}
         />
       </div>

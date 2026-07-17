@@ -4,22 +4,15 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import JitsiMeetFrame from './JitsiMeetFrame';
 
 const ACTIVE_MEETING_KEY = 'nexoraActiveMeetingId';
-const MINIMIZED_CLASS = 'legatalk-meeting-minimized';
 
 function routeMeetingId(pathname) {
   const match = String(pathname || '').match(/^\/meetings\/([^/?#]+)/i);
   return match?.[1] ? decodeURIComponent(match[1]) : '';
 }
 
-function setMinimizedDocumentState(enabled) {
-  document.body.classList.toggle(MINIMIZED_CLASS, enabled);
-  document.documentElement.classList.toggle(MINIMIZED_CLASS, enabled);
-}
-
 export default function MeetingDock() {
   const navigate = useNavigate();
   const location = useLocation();
-
   const currentMeetingRouteId = useMemo(
     () => routeMeetingId(location.pathname),
     [location.pathname],
@@ -28,13 +21,11 @@ export default function MeetingDock() {
   const [meetingId, setMeetingId] = useState(
     () => currentMeetingRouteId || sessionStorage.getItem(ACTIVE_MEETING_KEY) || '',
   );
-  const [expandedOverlay, setExpandedOverlay] = useState(false);
 
   useEffect(() => {
     if (!currentMeetingRouteId) return;
     sessionStorage.setItem(ACTIVE_MEETING_KEY, currentMeetingRouteId);
     setMeetingId(currentMeetingRouteId);
-    setExpandedOverlay(false);
   }, [currentMeetingRouteId]);
 
   useEffect(() => {
@@ -52,7 +43,6 @@ export default function MeetingDock() {
         if (!closedId || closedId === String(current)) return '';
         return current;
       });
-      setExpandedOverlay(false);
     };
 
     window.addEventListener('nexora:meeting-active', sync);
@@ -66,62 +56,52 @@ export default function MeetingDock() {
     };
   }, []);
 
-  const routeExpanded =
-    Boolean(meetingId) && String(currentMeetingRouteId) === String(meetingId);
-  const expanded = Boolean(meetingId) && (routeExpanded || expandedOverlay);
-  const minimized = Boolean(meetingId) && !expanded;
-
-  useEffect(() => {
-    setMinimizedDocumentState(minimized);
-    return () => setMinimizedDocumentState(false);
-  }, [minimized]);
-
   if (!meetingId) return null;
 
-  const handleMinimize = () => {
-    setExpandedOverlay(false);
-    navigate('/timeline');
-  };
-
-  const handleExpand = () => {
-    /*
-     * Do not navigate back to /meetings/:id here. Route navigation changes
-     * meeting-room-mode CSS and was resizing the Jitsi compositor surface.
-     * We only remove the app overlay. The iframe itself is never touched.
-     */
-    setExpandedOverlay(true);
-  };
+  const expanded = String(currentMeetingRouteId) === String(meetingId);
 
   const handleClosed = () => {
     sessionStorage.removeItem(ACTIVE_MEETING_KEY);
-    setMinimizedDocumentState(false);
-    setExpandedOverlay(false);
     setMeetingId('');
-    navigate('/meetings', { replace: true });
+    if (expanded) navigate('/meetings', { replace: true });
   };
 
   return (
     <>
-      <div className="meeting-persistent-surface">
+      {/*
+        IMPORTANT: the Jitsi iframe always stays at exactly the same full-screen
+        geometry. Minimizing only makes the fixed surface almost transparent and
+        disables pointer input. We never resize, move, scale, display:none or
+        remount the cross-origin WebRTC iframe, which avoids Chromium black frames.
+      */}
+      <div
+        className={`meeting-persistent-surface ${
+          expanded ? 'is-expanded' : 'is-minimized'
+        }`}
+        aria-hidden={!expanded}
+      >
         <JitsiMeetFrame
           meetingId={meetingId}
           compact={false}
-          onMinimize={handleMinimize}
-          onExpand={handleExpand}
+          onMinimize={() => navigate('/timeline')}
+          onExpand={() => navigate(`/meetings/${meetingId}`)}
           onClosed={handleClosed}
         />
       </div>
 
-      {minimized && (
+      {!expanded && (
         <aside className="meeting-mini-controller" aria-label="Cuộc họp đang chạy">
           <span className="meeting-mini-controller-icon">
             <Video size={20} />
           </span>
           <span className="meeting-mini-controller-copy">
             <b>Cuộc họp đang chạy</b>
-            <small>Bạn vẫn nghe và nói khi xem bảng tin hoặc nhắn tin.</small>
+            <small>Bạn vẫn nghe và nói trong khi xem bảng tin hoặc nhắn tin.</small>
           </span>
-          <button type="button" onClick={handleExpand}>
+          <button
+            type="button"
+            onClick={() => navigate(`/meetings/${meetingId}`)}
+          >
             <Maximize2 size={16} />
             Phóng to
           </button>

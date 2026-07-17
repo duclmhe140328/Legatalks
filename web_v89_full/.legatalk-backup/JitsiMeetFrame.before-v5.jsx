@@ -8,6 +8,8 @@ const DEFAULT_SERVER_URL =
 
 const ACTIVE_MEETING_KEY = 'nexoraActiveMeetingId';
 const loadedScripts = new Map();
+const DEFAULT_SURFACE_HEADER_HEIGHT = 62;
+
 const GLOBAL_JITSI_REGISTRY_KEY = '__LEGATALK_JITSI_INSTANCE_REGISTRY__';
 
 function getJitsiInstanceRegistry() {
@@ -278,6 +280,29 @@ function allowScreenCapture(container) {
   return true;
 }
 
+function getStableSurfaceSize() {
+  const visualViewport = window.visualViewport;
+  const viewportWidth = Math.round(
+    visualViewport?.width || window.innerWidth || document.documentElement.clientWidth || 1280,
+  );
+  const viewportHeight = Math.round(
+    visualViewport?.height || window.innerHeight || document.documentElement.clientHeight || 720,
+  );
+
+  return {
+    width: Math.max(320, viewportWidth),
+    height: Math.max(240, viewportHeight - DEFAULT_SURFACE_HEADER_HEIGHT),
+  };
+}
+
+function samePlacement(left, right) {
+  return (
+    Math.abs((left?.x || 0) - (right?.x || 0)) < 0.25 &&
+    Math.abs((left?.y || 0) - (right?.y || 0)) < 0.25 &&
+    Math.abs((left?.scale || 1) - (right?.scale || 1)) < 0.0005
+  );
+}
+
 function mergedJitsiConfig({
   backendConfig,
   configOverwrite,
@@ -365,6 +390,7 @@ export default function JitsiMeetFrame({
 }) {
   const { user } = useAuth();
   const parentRef = useRef(null);
+  const viewportRef = useRef(null);
   const apiRef = useRef(null);
   const instanceOwnerRef = useRef(
     `legatalk-jitsi-${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -381,6 +407,8 @@ export default function JitsiMeetFrame({
   const [meeting, setMeeting] = useState(null);
   const [closed, setClosed] = useState(false);
   const [resolvedRoom, setResolvedRoom] = useState('');
+  const [surfaceSize, setSurfaceSize] = useState(() => getStableSurfaceSize());
+  const [surfacePlacement, setSurfacePlacement] = useState({ x: 0, y: 0, scale: 1 });
 
   useEffect(() => {
     callbacksRef.current = { onReady, onJoined, onLeft, onEnded, onClosed };
@@ -745,6 +773,71 @@ export default function JitsiMeetFrame({
     currentUserId,
   ]);
 
+  useEffect(() => {
+    let animationFrame = 0;
+
+    const updateSurfaceSize = () => {
+      window.cancelAnimationFrame(animationFrame);
+      animationFrame = window.requestAnimationFrame(() => {
+        const next = getStableSurfaceSize();
+        setSurfaceSize((current) =>
+          current.width === next.width && current.height === next.height ? current : next,
+        );
+      });
+    };
+
+    window.addEventListener('resize', updateSurfaceSize);
+    window.visualViewport?.addEventListener?.('resize', updateSurfaceSize);
+
+    return () => {
+      window.removeEventListener('resize', updateSurfaceSize);
+      window.visualViewport?.removeEventListener?.('resize', updateSurfaceSize);
+      window.cancelAnimationFrame(animationFrame);
+    };
+  }, []);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return undefined;
+
+    let animationFrame = 0;
+    const timers = [];
+
+    const updatePlacement = () => {
+      window.cancelAnimationFrame(animationFrame);
+      animationFrame = window.requestAnimationFrame(() => {
+        const rect = viewport.getBoundingClientRect();
+        if (rect.width < 1 || rect.height < 1) return;
+
+        const scale = Math.max(
+          0.01,
+          Math.min(rect.width / surfaceSize.width, rect.height / surfaceSize.height),
+        );
+        const next = {
+          x: Math.max(0, (rect.width - surfaceSize.width * scale) / 2),
+          y: Math.max(0, (rect.height - surfaceSize.height * scale) / 2),
+          scale,
+        };
+
+        setSurfacePlacement((current) => (samePlacement(current, next) ? current : next));
+        allowScreenCapture(parentRef.current);
+      });
+    };
+
+    [0, 60, 160, 320].forEach((delay) => {
+      timers.push(window.setTimeout(updatePlacement, delay));
+    });
+
+    const observer =
+      typeof ResizeObserver !== 'undefined' ? new ResizeObserver(updatePlacement) : null;
+    observer?.observe(viewport);
+
+    return () => {
+      observer?.disconnect();
+      timers.forEach((timer) => window.clearTimeout(timer));
+      window.cancelAnimationFrame(animationFrame);
+    };
+  }, [compact, surfaceSize.width, surfaceSize.height]);
 
   return (
     <section
@@ -756,7 +849,7 @@ export default function JitsiMeetFrame({
           <span>
             {compact
               ? 'Cuộc họp vẫn đang chạy — bạn có thể tiếp tục làm việc trên web'
-              : 'Legatalk · chia sẻ màn hình và các công cụ họp'}
+              : 'Jitsi Meet SDK · chia sẻ màn hình và các công cụ họp'}
           </span>
         </div>
 
@@ -783,6 +876,7 @@ export default function JitsiMeetFrame({
 
       <div
         className={`jitsi-container ${closed ? 'is-closed' : ''}`}
+        ref={viewportRef}
       >
         {(status || error) && (
           <div className="jitsi-status jitsi-status-overlay">
@@ -801,15 +895,16 @@ export default function JitsiMeetFrame({
           ref={parentRef}
           style={{
             position: 'absolute',
-            inset: 0,
-            width: '100%',
-            height: '100%',
-            minWidth: 0,
-            minHeight: 0,
+            left: 0,
+            top: 0,
+            width: `${surfaceSize.width}px`,
+            height: `${surfaceSize.height}px`,
+            minWidth: `${surfaceSize.width}px`,
+            minHeight: `${surfaceSize.height}px`,
             overflow: 'hidden',
-            transform: 'none',
-            opacity: 1,
-            visibility: 'visible',
+            '--legatalk-jitsi-surface-width': `${surfaceSize.width}px`,
+            '--legatalk-jitsi-surface-height': `${surfaceSize.height}px`,
+            '--legatalk-jitsi-surface-transform': `translate3d(${surfacePlacement.x}px, ${surfacePlacement.y}px, 0) scale(${surfacePlacement.scale})`,
           }}
         />
       </div>
