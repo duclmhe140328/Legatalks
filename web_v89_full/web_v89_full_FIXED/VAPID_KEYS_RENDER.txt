@@ -1,4 +1,0 @@
-# Copy these values to Render Environment
-VAPID_PUBLIC_KEY=BD4t9iWgRa1cLrkKLXbTmnVzjU1yRKGOrJJTH4Tn_Y7yrUsG53lFTx3-zB0Ycm44-Va9DBvfl7Zh8xryu_Jjh3o
-VAPID_PRIVATE_KEY=juIkmtl-jsNfhNa_KtqADOBsNfadgVJ5Bjs7oBIMHJY
-VAPID_SUBJECT=mailto:admin@nexora.local

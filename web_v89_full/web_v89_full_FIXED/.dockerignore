@@ -1,6 +1,0 @@
-node_modules
-.git
-apps/server/uploads/*
-!apps/server/uploads/.gitkeep
-apps/web/dist
-*.zip

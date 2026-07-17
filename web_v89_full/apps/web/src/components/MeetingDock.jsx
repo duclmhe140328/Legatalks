@@ -4,43 +4,76 @@ import JitsiMeetFrame from './JitsiMeetFrame';
 
 const ACTIVE_MEETING_KEY = 'nexoraActiveMeetingId';
 
+function routeMeetingId(pathname) {
+  const match = String(pathname || '').match(/^\/meetings\/([^/?#]+)/i);
+  return match?.[1] ? decodeURIComponent(match[1]) : '';
+}
+
 export default function MeetingDock() {
   const navigate = useNavigate();
   const location = useLocation();
-  const [meetingId, setMeetingId] = useState(() => sessionStorage.getItem(ACTIVE_MEETING_KEY) || '');
+  const currentMeetingRouteId = useMemo(
+    () => routeMeetingId(location.pathname),
+    [location.pathname],
+  );
+
+  const [meetingId, setMeetingId] = useState(
+    () => currentMeetingRouteId || sessionStorage.getItem(ACTIVE_MEETING_KEY) || '',
+  );
+
+  useEffect(() => {
+    if (!currentMeetingRouteId) return;
+    sessionStorage.setItem(ACTIVE_MEETING_KEY, currentMeetingRouteId);
+    setMeetingId(currentMeetingRouteId);
+  }, [currentMeetingRouteId]);
 
   useEffect(() => {
     const sync = (event) => {
-      const id = event?.detail?.meetingId || sessionStorage.getItem(ACTIVE_MEETING_KEY) || '';
-      setMeetingId(id);
+      const id =
+        event?.detail?.meetingId ||
+        sessionStorage.getItem(ACTIVE_MEETING_KEY) ||
+        '';
+      setMeetingId(String(id));
     };
+
     const closed = (event) => {
-      const closedId = event?.detail?.meetingId || '';
-      if (!closedId || String(closedId) === String(meetingId)) setMeetingId('');
+      const closedId = String(event?.detail?.meetingId || '');
+      setMeetingId((current) => {
+        if (!closedId || closedId === String(current)) return '';
+        return current;
+      });
     };
+
     window.addEventListener('nexora:meeting-active', sync);
     window.addEventListener('nexora:meeting-closed', closed);
     window.addEventListener('storage', sync);
+
     return () => {
       window.removeEventListener('nexora:meeting-active', sync);
       window.removeEventListener('nexora:meeting-closed', closed);
       window.removeEventListener('storage', sync);
     };
-  }, [meetingId]);
+  }, []);
 
-  const currentMeetingRouteId = useMemo(() => {
-    const match = location.pathname.match(/^\/meetings\/([^/]+)/);
-    return match?.[1] || '';
-  }, [location.pathname]);
+  if (!meetingId) return null;
 
-  if (!meetingId || String(currentMeetingRouteId) === String(meetingId)) return null;
+  const expanded = String(currentMeetingRouteId) === String(meetingId);
 
-  return <div className="meeting-mini-dock">
-    <JitsiMeetFrame
-      meetingId={meetingId}
-      compact
-      onExpand={() => navigate(`/meetings/${meetingId}`)}
-      onClosed={() => setMeetingId('')}
-    />
-  </div>;
+  const handleClosed = () => {
+    sessionStorage.removeItem(ACTIVE_MEETING_KEY);
+    setMeetingId('');
+    if (expanded) navigate('/meetings', { replace: true });
+  };
+
+  return (
+    <div className={expanded ? 'meeting-full-dock' : 'meeting-mini-dock'}>
+      <JitsiMeetFrame
+        meetingId={meetingId}
+        compact={!expanded}
+        onMinimize={() => navigate('/timeline')}
+        onExpand={() => navigate(`/meetings/${meetingId}`)}
+        onClosed={handleClosed}
+      />
+    </div>
+  );
 }

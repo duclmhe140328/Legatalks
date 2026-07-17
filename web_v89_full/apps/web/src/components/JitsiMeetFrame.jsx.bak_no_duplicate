@@ -9,26 +9,6 @@ const DEFAULT_SERVER_URL =
 const ACTIVE_MEETING_KEY = 'nexoraActiveMeetingId';
 const loadedScripts = new Map();
 
-const GLOBAL_JITSI_REGISTRY_KEY = '__LEGATALK_JITSI_INSTANCE_REGISTRY__';
-
-function getJitsiInstanceRegistry() {
-  if (!window[GLOBAL_JITSI_REGISTRY_KEY]) {
-    window[GLOBAL_JITSI_REGISTRY_KEY] = new Map();
-  }
-
-  return window[GLOBAL_JITSI_REGISTRY_KEY];
-}
-
-function safeDisposeInstance(instance, parentNode) {
-  try {
-    instance?.dispose?.();
-  } catch {
-    // Jitsi may already be closing.
-  }
-
-  if (parentNode) parentNode.innerHTML = '';
-}
-
 function cleanServerUrl(value = DEFAULT_SERVER_URL) {
   const raw = String(value || DEFAULT_SERVER_URL).trim().replace(/\/+$/, '');
   if (!raw) return DEFAULT_SERVER_URL;
@@ -367,10 +347,6 @@ export default function JitsiMeetFrame({
   const { user } = useAuth();
   const parentRef = useRef(null);
   const apiRef = useRef(null);
-  const instanceOwnerRef = useRef(
-    `legatalk-jitsi-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-  );
-  const registryKeyRef = useRef('');
   const joinedRef = useRef(false);
   const closingRef = useRef(false);
   const finalizedRef = useRef(false);
@@ -402,19 +378,13 @@ export default function JitsiMeetFrame({
   const title = firstNonEmpty(meeting?.title, subject, 'LegaTalk Meeting');
 
   const dispose = () => {
-    const instance = apiRef.current;
-    apiRef.current = null;
-    safeDisposeInstance(instance, parentRef.current);
-
-    const registryKey = registryKeyRef.current;
-    if (!registryKey) return;
-
-    const registry = getJitsiInstanceRegistry();
-    const active = registry.get(registryKey);
-
-    if (active?.ownerId === instanceOwnerRef.current) {
-      registry.delete(registryKey);
+    try {
+      apiRef.current?.dispose?.();
+    } catch {
+      // IFrame API may already be disposed after readyToClose.
     }
+    apiRef.current = null;
+    if (parentRef.current) parentRef.current.innerHTML = '';
   };
 
   const finalizeClose = (message) => {
@@ -460,33 +430,6 @@ export default function JitsiMeetFrame({
 
   useEffect(() => {
     let cancelled = false;
-
-    /*
-     * React development mode, route transitions, or two meeting wrappers may
-     * mount the imperative Jitsi IFrame API more than once. Claim one global
-     * meeting slot per browser tab so only the latest mounted meeting creates
-     * an actual Jitsi participant.
-     */
-    const registry = getJitsiInstanceRegistry();
-    const registryKey = purpose === 'meeting' ? 'meeting' : `jitsi:${purpose}`;
-    const previous = registry.get(registryKey);
-    const claim = {
-      ownerId: instanceOwnerRef.current,
-      token: `${Date.now()}-${Math.random()}`,
-      api: null,
-      parentNode: parentRef.current,
-    };
-
-    registryKeyRef.current = registryKey;
-    registry.set(registryKey, claim);
-
-    if (previous && previous !== claim) {
-      safeDisposeInstance(previous.api, previous.parentNode);
-    }
-
-    const stillOwnsSlot = () =>
-      !cancelled && registry.get(registryKey) === claim;
-
     joinedRef.current = false;
     closingRef.current = false;
     finalizedRef.current = false;
@@ -509,7 +452,7 @@ export default function JitsiMeetFrame({
             const response = await api.get(`/meetings/${effectiveMeetingId}`);
             meetingData = meetingFromPayload(response.data);
             joinConfig = joinConfigFromPayload(response.data);
-            if (stillOwnsSlot()) setMeeting(meetingData);
+            if (!cancelled) setMeeting(meetingData);
           } catch {
             routeFetchFailed = true;
           }
@@ -569,23 +512,14 @@ export default function JitsiMeetFrame({
           throw new Error('Backend không trả JWT Jitsi.');
         }
 
-        if (!stillOwnsSlot()) return;
-
         setResolvedRoom(effectiveRoom);
         await loadJitsiExternalApi(effectiveServer);
 
-        if (
-          !stillOwnsSlot() ||
-          !parentRef.current ||
-          !window.JitsiMeetExternalAPI
-        ) {
+        if (cancelled || !parentRef.current || !window.JitsiMeetExternalAPI) {
           return;
         }
 
-        /* Clear only this component's previous iframe without releasing the
-         * global claim that protects against duplicate participants. */
-        safeDisposeInstance(apiRef.current, parentRef.current);
-        apiRef.current = null;
+        dispose();
 
         const backendConfig = objectOf(joinConfig.configOverwrite);
         const backendInterfaceConfig = objectOf(
@@ -656,14 +590,7 @@ export default function JitsiMeetFrame({
           },
         );
 
-        if (!stillOwnsSlot()) {
-          safeDisposeInstance(instance, parentRef.current);
-          return;
-        }
-
         apiRef.current = instance;
-        claim.api = instance;
-        claim.parentNode = parentRef.current;
 
         const patchIframePermissions = () => allowScreenCapture(parentRef.current);
         window.setTimeout(patchIframePermissions, 150);
@@ -699,7 +626,7 @@ export default function JitsiMeetFrame({
 
         callbacksRef.current.onReady?.(instance);
       } catch (err) {
-        if (stillOwnsSlot()) {
+        if (!cancelled) {
           const message =
             err?.response?.data?.message ||
             err?.message ||
@@ -710,25 +637,11 @@ export default function JitsiMeetFrame({
       }
     }
 
-    /* Delay imperative iframe creation slightly. React StrictMode immediately
-     * cleans up the first development mount, so its timer is cancelled before
-     * a phantom Jitsi participant can connect. */
-    const startTimer = window.setTimeout(() => {
-      if (stillOwnsSlot()) void mountJitsi();
-    }, 120);
+    void mountJitsi();
 
     return () => {
       cancelled = true;
-      window.clearTimeout(startTimer);
-
-      const current = registry.get(registryKey);
-      const instance = apiRef.current;
-      apiRef.current = null;
-      safeDisposeInstance(instance, parentRef.current);
-
-      if (current === claim) {
-        registry.delete(registryKey);
-      }
+      dispose();
     };
   }, [
     effectiveMeetingId,

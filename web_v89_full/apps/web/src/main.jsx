@@ -11,7 +11,6 @@ window.NexoraNativeBridge = window.NexoraNativeBridge || {
   }
 };
 
-import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
@@ -23,13 +22,11 @@ window.__NEXORA_BUILD__ = 'web-v8.5-native-call-mobile-sync-2026-06-26';
 console.info('[Nexora build]', window.__NEXORA_BUILD__);
 
 ReactDOM.createRoot(document.getElementById('root')).render(
-  <React.StrictMode>
-    <BrowserRouter>
-      <AuthProvider>
-        <App />
-      </AuthProvider>
-    </BrowserRouter>
-  </React.StrictMode>
+  <BrowserRouter>
+    <AuthProvider>
+      <App />
+    </AuthProvider>
+  </BrowserRouter>
 );
 
 if ('serviceWorker' in navigator) {
