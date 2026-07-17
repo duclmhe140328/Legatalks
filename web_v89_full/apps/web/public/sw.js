@@ -12,7 +12,7 @@ self.addEventListener('push', (event) => {
       payload = { body: event.data?.text?.() || '' };
     }
 
-    const title = payload.title || 'Nexora Connect';
+    const title = payload.title || 'Legatalk Connect';
     const body = payload.body || 'Bạn có thông báo mới.';
     const data = payload.data || {};
     const path = data.path || data.url || DEFAULT_PATH;

@@ -306,6 +306,7 @@ function StoriesBar({ user }) {
   const [active, setActive] = useState(null);
   const [reply, setReply] = useState('');
   const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
   const fileRef = useRef(null);
 
   const loadStories = async () => {
@@ -321,34 +322,33 @@ function StoriesBar({ user }) {
       if (cancelled || !data?._id) return;
       setStories((list) => list.map((item) => String(item._id) === String(data._id) ? data : item));
       setActive((current) => String(current?._id) === String(data._id) ? data : current);
-    }).catch(() => {});
+    }).catch(() => { });
     return () => { cancelled = true; };
   }, [active?._id]);
-
   const uploadStoryMedia = async (file) => {
-  setBusy(true);
-  setError('');
+    setBusy(true);
+    setError('');
 
-  try {
-    const form = new FormData();
-    form.append('file', file);
+    try {
+      const form = new FormData();
+      form.append('file', file);
 
-    const response = await api.post('/uploads', form);
-    const item = normalizeUploadedMedia(response.data);
+      const { data: item } = await api.post('/uploads', form);
 
-    if (!item.url) {
-      throw new Error(
-        'Server upload thành công nhưng không trả về URL ảnh.',
-      );
+      setMedia({
+        url: item.url,
+        thumbUrl: item.thumbUrl || item.url,
+        mimeType: item.mimeType || file.type,
+        type:
+          item.type ||
+          (file.type.startsWith('video/') ? 'video' : 'image'),
+      });
+    } catch (uploadError) {
+      setError(errorMessage(uploadError));
+    } finally {
+      setBusy(false);
     }
-
-    setMedia(item);
-  } catch (uploadError) {
-    setError(errorMessage(uploadError));
-  } finally {
-    setBusy(false);
-  }
-};
+  };
 
   const createStory = async () => {
     if (!text.trim() && !media) return;
@@ -374,16 +374,50 @@ function StoriesBar({ user }) {
 
   return <section className="stories-card card">
     <div className="stories-create">
-      <Avatar user={user} size={38} />
-      <input value={text} onChange={(event) => setText(event.target.value)} placeholder="Đăng story 24h…" />
-      <button onClick={() => fileRef.current?.click()}><ImagePlus size={16} /> Ảnh/video</button>
-      <input ref={fileRef} type="file" accept="image/*,video/*" hidden onChange={(event) => {
-        const file = event.target.files?.[0];
-        if (file) void uploadStoryMedia(file);
-        event.target.value = '';
-      }} />
-      <button className="story-send" onClick={createStory}><Plus size={16} /> Đăng</button>
-    </div>
+  <Avatar user={user} size={38} />
+
+  <input
+    value={text}
+    onChange={(event) => setText(event.target.value)}
+    placeholder="Đăng story 24h…"
+    disabled={busy}
+  />
+
+  <button
+    type="button"
+    disabled={busy}
+    onClick={() => fileRef.current?.click()}
+  >
+    <ImagePlus size={16} />
+    {busy ? 'Đang tải…' : 'Ảnh/video'}
+  </button>
+
+  <input
+    ref={fileRef}
+    type="file"
+    accept="image/*,video/*"
+    hidden
+    onChange={(event) => {
+      const file = event.target.files?.[0];
+
+      if (file) {
+        void uploadStoryMedia(file);
+      }
+
+      event.target.value = '';
+    }}
+  />
+
+  <button
+    type="button"
+    className="story-send"
+    disabled={busy}
+    onClick={createStory}
+  >
+    <Plus size={16} />
+    Đăng
+  </button>
+</div>
     {media && <div className="story-selected">{media.type === 'video' ? <video src={media.url} muted /> : <img src={media.thumbUrl || media.url} alt="Story" />}<span>{media.mimeType || media.type}</span><button onClick={() => setMedia(null)}><X size={14} /></button></div>}
     {error && <div className="comment-error">{error}</div>}
     <div className="stories-strip">
@@ -409,7 +443,7 @@ function StoriesBar({ user }) {
           <span>❤️ {active.reactions?.length || 0} react</span>
           <span>💬 {active.replies?.length || 0} trả lời</span>
         </div>
-        <div className="story-reactions">{['👍','❤️','😂','😮','😢','🔥'].map((emoji) => <button key={emoji} onClick={() => void reactStory(active, emoji)}>{emoji}</button>)}<span>{active.reactions?.length || 0} react</span></div>
+        <div className="story-reactions">{['👍', '❤️', '😂', '😮', '😢', '🔥'].map((emoji) => <button key={emoji} onClick={() => void reactStory(active, emoji)}>{emoji}</button>)}<span>{active.reactions?.length || 0} react</span></div>
         <div className="story-reply-box"><input value={reply} onChange={(event) => setReply(event.target.value)} placeholder={`Trả lời ${active.author?.displayName || 'story'}…`} onKeyDown={(event) => { if (event.key === 'Enter') void replyStory(); }} /><button onClick={() => void replyStory()}><Send size={15} /></button></div>
       </div>
     </div>}
@@ -633,7 +667,7 @@ function RepostPreview({ post }) {
   </div>;
 }
 
-export function PostCard({ post, user, onLike, onComment, onShare = () => {}, onUpdated = () => {}, onDeleted = () => {}, profileMode = false }) {
+export function PostCard({ post, user, onLike, onComment, onShare = () => { }, onUpdated = () => { }, onDeleted = () => { }, profileMode = false }) {
   const liked = post.likes.some((id) => String(id?._id || id) === user._id);
   const source = originalPost(post);
   const inputId = `comment-input-${post._id}`;

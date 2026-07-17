@@ -116,7 +116,21 @@ const jitsiOrigin = (() => {
     return 'https://42.96.12.227';
   }
 })();
+const mirotalkOrigin = (() => {
+  const raw = String(
+    process.env.MIROTALK_BRO_PUBLIC_URL ||
+    process.env.MIROTALK_BRO_URL ||
+    'https://bro.mirotalk.com',
+  )
+    .trim()
+    .replace(/\/+$/, '');
 
+  try {
+    return new URL(raw).origin;
+  } catch {
+    return 'https://bro.mirotalk.com';
+  }
+})();
 const jitsiWebSocketOrigin = jitsiOrigin
   .replace(/^https:/, 'wss:')
   .replace(/^http:/, 'ws:');
@@ -175,11 +189,13 @@ app.use(
         frameSrc: [
           "'self'",
           jitsiOrigin,
+          mirotalkOrigin,
         ],
 
         childSrc: [
           "'self'",
           jitsiOrigin,
+          mirotalkOrigin,
           'blob:',
         ],
 
@@ -208,7 +224,7 @@ app.use(
     origin: isAllowedOrigin,
     credentials: true,
   }),
-);app.use(express.json({ limit: '10mb' }));
+); app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use('/uploads', express.static(uploadRoot, { maxAge: '7d', immutable: false }));
 

@@ -53,7 +53,7 @@ async function apiRequest(method, path, body) {
             body: body === undefined ? undefined : JSON.stringify(body),
           });
         }
-      } catch (_) {}
+      } catch (_) { }
     }
   }
 
@@ -308,7 +308,7 @@ export default function LivePanel() {
     boot();
 
     const timer = setInterval(() => {
-      loadStreams({ autoSelect: true }).catch(() => {});
+      loadStreams({ autoSelect: true }).catch(() => { });
     }, 5000);
 
     return () => {
@@ -323,10 +323,10 @@ export default function LivePanel() {
       return undefined;
     }
 
-    loadBroadcastJoin(selected, role).catch(() => {});
-    loadComments(idOf(selected)).catch(() => {});
+    loadBroadcastJoin(selected, role).catch(() => { });
+    loadComments(idOf(selected)).catch(() => { });
 
-    const timer = setInterval(() => loadComments(idOf(selected)).catch(() => {}), 1000);
+    const timer = setInterval(() => loadComments(idOf(selected)).catch(() => { }), 1000);
     return () => clearInterval(timer);
   }, [selectedId, role, selected, loadBroadcastJoin, loadComments]);
 
@@ -418,7 +418,7 @@ export default function LivePanel() {
           <h1 style={{ margin: '2px 0 0', color: '#0f172a', fontSize: 32, lineHeight: 1.05 }}>Livestream Broadcast</h1>
           <div style={{ color: '#64748b', fontWeight: 700 }}>Host phát live, tài khoản khác thấy link live bên dưới và bấm vào là viewer.</div>
         </div>
-        <button type="button" onClick={() => loadStreams({ autoSelect: true }).catch(() => {})} style={{ ...styles.button, background: '#0f172a', color: '#fff' }}>
+        <button type="button" onClick={() => loadStreams({ autoSelect: true }).catch(() => { })} style={{ ...styles.button, background: '#0f172a', color: '#fff' }}>
           Làm mới
         </button>
       </div>
@@ -549,13 +549,28 @@ export default function LivePanel() {
                     key={frameKey}
                     title="MiroTalk Broadcast"
                     src={joinUrl}
-                    allow={isHost ? 'camera; microphone; fullscreen; display-capture; autoplay' : 'fullscreen; autoplay'}
-                    allowFullScreen
-                    style={{ width: '100%', height: '100%', border: 0, background: '#020617' }}
+                    allow="
+    camera;
+    microphone;
+    speaker-selection;
+    display-capture;
+    fullscreen;
+    clipboard-read;
+    clipboard-write;
+    web-share;
+    autoplay;
+    picture-in-picture
+  "
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      border: 0,
+                      background: '#020617',
+                    }}
                   />
                 ) : (
                   <div style={{ color: 'white', display: 'grid', placeItems: 'center', height: '100%', textAlign: 'center', padding: 20 }}>
-                    Không lấy được link LEGATALK BRO. 
+                    Không lấy được link LEGATALK BRO.
                   </div>
                 )}
               </div>

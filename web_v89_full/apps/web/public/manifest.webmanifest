@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "Nexora Connect",
-  "short_name": "Nexora",
-  "description": "Mạng xã hội, nhắn tin và họp trực tuyến Nexora Connect",
+  "name": "Legatalk Connect",
+  "short_name": "Legatalk",
+  "description": "Mạng xã hội, nhắn tin và họp trực tuyến Legatalk Connect",
   "start_url": "/timeline",
   "scope": "/",
   "display": "standalone",
