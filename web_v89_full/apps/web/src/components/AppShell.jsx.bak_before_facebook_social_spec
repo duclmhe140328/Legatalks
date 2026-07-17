@@ -1,0 +1,140 @@
+import { useEffect, useState } from 'react';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import {
+  Bell, Bot, ContactRound, LogOut, MessageCircleMore, PanelsTopLeft,
+  PhoneCall, Store, UserRound, Video
+} from 'lucide-react';
+import { formatDistanceToNow } from 'date-fns';
+import { vi } from 'date-fns/locale';
+import { useAuth } from '../context/AuthContext';
+import { useSocket } from '../context/SocketContext';
+import { api } from '../services/api';
+import Avatar from './Avatar';
+import IncomingCall from './IncomingCall';
+import CallModal from './CallModal';
+import MeetingDock from './MeetingDock';
+
+const items = [
+  ['/chats', MessageCircleMore, 'Tin nhắn'],
+  ['/calls', PhoneCall, 'Cuộc gọi'],
+  ['/timeline', PanelsTopLeft, 'Nhật ký'],
+  ['/meetings', Video, 'Họp online'],
+  ['/contacts', ContactRound, 'Danh bạ'],
+  ['/mini-apps', Store, 'Mini App'],
+  ['/integrations', Bot, 'OA & Bot'],
+  ['/profile', UserRound, 'Hồ sơ']
+];
+
+export default function AppShell() {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { socket, incomingCall, activeCall, callNotice, answerCall, declineCall, closeActiveCall, unreadTotal } = useSocket();
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [open, setOpen] = useState(false);
+
+  const loadPreview = async () => {
+    const { data } = await api.get('/notifications', { params: { page: 1, limit: 5 } });
+    setNotifications(data.items || []);
+    setUnreadCount(data.unreadCount || 0);
+  };
+
+  useEffect(() => { void loadPreview(); }, []);
+
+  useEffect(() => {
+    const onNew = (item) => {
+      setNotifications((current) => [item, ...current.filter((entry) => entry._id !== item._id)].slice(0, 5));
+      if (!item.readAt) setUnreadCount((count) => count + 1);
+    };
+    const onReadSync = () => void loadPreview();
+    socket?.on('notification:new', onNew);
+    window.addEventListener('notifications:refresh', onReadSync);
+    return () => {
+      socket?.off('notification:new', onNew);
+      window.removeEventListener('notifications:refresh', onReadSync);
+    };
+  }, [socket]);
+
+  const openNotification = async (item) => {
+    if (!item.readAt) {
+      await api.post(`/notifications/${item._id}/read`).catch(() => {});
+      setNotifications((list) => list.map((entry) => entry._id === item._id ? { ...entry, readAt: new Date().toISOString() } : entry));
+      setUnreadCount((count) => Math.max(0, count - 1));
+      window.dispatchEvent(new Event('notifications:refresh-page'));
+    }
+    const conversationId = item.data?.conversationId;
+    const postId = item.data?.postId;
+    const meetingId = item.data?.meetingId;
+    const path = item.data?.path;
+    if (conversationId) {
+      sessionStorage.setItem('openConversationId', conversationId);
+      navigate('/chats');
+      setOpen(false);
+    } else if (meetingId) {
+      navigate(`/meetings/${meetingId}`);
+      setOpen(false);
+    } else if (path) {
+      navigate(path);
+      setOpen(false);
+    } else if (postId) {
+      navigate(`/timeline?post=${postId}`);
+      setOpen(false);
+    }
+  };
+
+  const readAll = async () => {
+    await api.post('/notifications/read-all');
+    setUnreadCount(0);
+    setNotifications((list) => list.map((item) => ({ ...item, readAt: item.readAt || new Date().toISOString() })));
+    window.dispatchEvent(new Event('notifications:refresh-page'));
+  };
+
+  return (
+    <div className="app-frame">
+      <aside className="side-nav">
+        <div className="brand"><span className="brand-mark small">N</span><b>Nexora</b></div>
+        <div className="nav-user"><Avatar user={user} size={46} /><div><strong>{user.displayName}</strong><span>{user.accountType === 'official' ? 'Official Account' : `+${user.phone}`}</span></div></div>
+        <nav>
+          {items.map(([href, Icon, label]) => (
+            <NavLink key={href} to={href} className={({ isActive }) => isActive ? 'active' : ''}>
+              <span className="nav-icon-wrap"><Icon size={20} />{href === '/chats' && unreadTotal > 0 && <i className="nav-unread">{unreadTotal > 9 ? '9+' : unreadTotal}</i>}</span><span>{label}</span>
+            </NavLink>
+          ))}
+        </nav>
+        <button className="nav-logout" onClick={logout}><LogOut size={19} /> Đăng xuất</button>
+      </aside>
+
+      <main className="app-content">
+        <header className="topbar">
+          <div><h1>Nexora Connect</h1><p>Chat, gọi điện và kết nối trong một nền tảng</p></div>
+          <div className="top-actions">
+            <button className="icon-btn" onClick={() => setOpen((v) => !v)} aria-label="Thông báo">
+              <Bell size={21} />{unreadCount > 0 && <span className="badge">{unreadCount > 99 ? '99+' : unreadCount}</span>}
+            </button>
+            <Avatar user={user} size={38} />
+          </div>
+          {open && (
+            <div className="notification-popover">
+              <div className="popover-head"><div><b>Thông báo</b><span>5 thông báo gần nhất</span></div><button onClick={readAll}>Đọc tất cả</button></div>
+              <div className="notification-list">
+                {notifications.length === 0 && <div className="empty-mini">Chưa có thông báo.</div>}
+                {notifications.map((item) => (
+                  <button key={item._id} className={`notification-item ${item.readAt ? 'read' : 'unread'}`} onClick={() => openNotification(item)}>
+                    <Avatar user={item.actor} size={38} />
+                    <div className="notification-copy"><b>{item.title || 'Thông báo mới'}</b><p>{item.body || 'Bạn có một cập nhật mới.'}</p><time>{formatDistanceToNow(new Date(item.createdAt), { addSuffix: true, locale: vi })}</time></div>
+                  </button>
+                ))}
+              </div>
+              <button className="notification-see-all" onClick={() => { setOpen(false); navigate('/notifications'); }}>Xem tất cả thông báo</button>
+            </div>
+          )}
+        </header>
+        <div className={`route-view ${location.pathname.startsWith('/timeline') ? 'timeline-route-view' : ''}`}><Outlet /></div>
+      </main>
+      <IncomingCall call={incomingCall} onAnswer={answerCall} onDecline={declineCall} />
+      {activeCall && <CallModal {...activeCall} externalStatus={callNotice} onClose={closeActiveCall} />}
+      <MeetingDock />
+    </div>
+  );
+}

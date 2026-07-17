@@ -1,0 +1,54 @@
+export async function sendOtpEmail(email, code, purpose = 'login') {
+  const to = String(email || '').trim().toLowerCase();
+
+  if (!to) return;
+
+  const subjectMap = {
+    register: 'Ma OTP dang ky Nexora Connect',
+    login: 'Ma OTP dang nhap Nexora Connect',
+    reset: 'Ma OTP dat lai mat khau Nexora Connect',
+  };
+
+  const subject = subjectMap[purpose] || 'Ma OTP Nexora Connect';
+  const text = `Ma OTP Nexora Connect cua ban la ${code}. Ma co hieu luc trong thoi gian ngan. Khong chia se ma nay cho bat ky ai.`;
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.5;color:#111827">
+      <h2 style="margin:0 0 12px">Nexora Connect</h2>
+      <p>Ma OTP cua ban:</p>
+      <div style="font-size:30px;font-weight:800;letter-spacing:6px;background:#f1f5f9;padding:14px 18px;border-radius:14px;display:inline-block">${code}</div>
+      <p style="color:#64748b">Khong chia se ma nay cho bat ky ai.</p>
+    </div>
+  `;
+
+  const gmailUser = process.env.GMAIL_USER || process.env.EMAIL_USER || process.env.SMTP_USER || '';
+  const gmailPass = process.env.GMAIL_APP_PASSWORD || process.env.EMAIL_PASS || process.env.SMTP_PASS || '';
+  const from = process.env.EMAIL_FROM || (gmailUser ? `Nexora Connect <${gmailUser}>` : 'Nexora Connect <no-reply@nexora.local>');
+
+  if (!gmailUser || !gmailPass) {
+    console.log(`[DEV EMAIL OTP] to=${to} purpose=${purpose} code=${code}`);
+    return;
+  }
+
+  try {
+    const nodemailer = await import('nodemailer');
+
+    const transporter = nodemailer.default.createTransport({
+      service: 'gmail',
+      auth: {
+        user: gmailUser,
+        pass: gmailPass,
+      },
+    });
+
+    await transporter.sendMail({
+      from,
+      to,
+      subject,
+      text,
+      html,
+    });
+  } catch (error) {
+    console.error('Send OTP email failed:', error.message);
+    console.log(`[DEV EMAIL OTP FALLBACK] to=${to} purpose=${purpose} code=${code}`);
+  }
+}

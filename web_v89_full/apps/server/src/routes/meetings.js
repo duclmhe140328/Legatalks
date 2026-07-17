@@ -1,0 +1,329 @@
+﻿import express from 'express';
+import { nanoid } from 'nanoid';
+import Meeting from '../models/Meeting.js';
+import Conversation from '../models/Conversation.js';
+import User from '../models/User.js';
+import { env } from '../config/env.js';
+import { requireAuth } from '../middleware/auth.js';
+import { asyncHandler } from '../utils/asyncHandler.js';
+import { ensureMember, createMessage } from '../services/messageService.js';
+import { createNotification } from '../services/notifications.js';
+
+const router = express.Router();
+router.use(requireAuth);
+
+const userFields = 'displayName avatar accountType verified';
+const MEETING_POPULATE = [
+  { path: 'createdBy', select: userFields },
+  { path: 'participants.user', select: userFields },
+  { path: 'conversation', select: 'type name avatar members' }
+];
+
+function toDateOrNow(value) {
+  const date = value ? new Date(value) : new Date();
+  return Number.isNaN(date.getTime()) ? new Date() : date;
+}
+
+function normalizeDuration(value) {
+  const parsed = Number(value || 60);
+  return Math.min(1440, Math.max(5, Number.isFinite(parsed) ? parsed : 60));
+}
+
+function normalizeVisibility(value, isPublic) {
+  if (value === 'public' || isPublic === true || isPublic === 'true') return 'public';
+  return 'private';
+}
+
+function meetingUrl(meeting) {
+  return `/meetings/${meeting._id}`;
+}
+
+function meetingPayload(meeting) {
+  return {
+    meetingId: meeting._id,
+    title: meeting.title,
+    roomName: meeting.roomName,
+    jitsiDomain: meeting.jitsiDomain,
+    startsAt: meeting.startsAt,
+    endsAt: meeting.endsAt,
+    durationMinutes: meeting.durationMinutes,
+    status: meeting.status,
+    visibility: meeting.visibility || 'private',
+    url: meetingUrl(meeting)
+  };
+}
+
+async function populateMeeting(meeting) {
+  await meeting.populate(MEETING_POPULATE);
+  return meeting;
+}
+
+function userAccessQuery(userId) {
+  return {
+    $or: [
+      { visibility: 'public' },
+      { createdBy: userId },
+      { 'participants.user': userId }
+    ]
+  };
+}
+
+function addParticipantIfMissing(meeting, userId, { response = 'accepted' } = {}) {
+  const exists = meeting.participants.some((item) => String(item.user?._id || item.user) === String(userId));
+  if (!exists) meeting.participants.push({ user: userId, role: 'participant', response });
+  return !exists;
+}
+
+async function ensureParticipant(meetingId, userId, options = {}) {
+  const meeting = await Meeting.findById(meetingId);
+  if (!meeting) {
+    const error = new Error('Không tìm thấy cuộc họp.');
+    error.status = 404;
+    throw error;
+  }
+
+  const alreadyParticipant = meeting.participants.some((item) => String(item.user) === String(userId));
+  if (alreadyParticipant) return meeting;
+
+  // Phòng công cộng hiển thị cho mọi tài khoản và ai mở link cũng được ghi danh để vào họp.
+  if ((meeting.visibility || 'private') === 'public') {
+    addParticipantIfMissing(meeting, userId, { response: 'accepted' });
+    await meeting.save();
+    return meeting;
+  }
+
+  // Link gửi trong đoạn chat riêng/nhóm chỉ dành cho thành viên đoạn chat đó.
+  if (options.allowConversationMember && meeting.conversation) {
+    const conversation = await Conversation.findOne({ _id: meeting.conversation, 'members.user': userId }).select('_id');
+    if (conversation) {
+      addParticipantIfMissing(meeting, userId, { response: 'accepted' });
+      await meeting.save();
+      return meeting;
+    }
+  }
+
+  const error = new Error('Bạn không thuộc cuộc họp này.');
+  error.status = 403;
+  throw error;
+}
+
+function isMeetJitsiPublic(domain) {
+  return String(domain || '').replace(/^https?:\/\//, '').replace(/\/$/, '') === 'meet.jit.si';
+}
+
+async function syncTimeStatus(meeting) {
+  const now = new Date();
+  if (meeting.status === 'scheduled' && meeting.startsAt <= now && meeting.endsAt > now) {
+    meeting.status = 'live';
+    meeting.actualStartedAt ||= now;
+    await meeting.save();
+  }
+  if (['scheduled', 'live'].includes(meeting.status) && meeting.endsAt <= now) {
+    meeting.status = 'ended';
+    meeting.actualEndedAt ||= now;
+    await meeting.save();
+  }
+  return meeting;
+}
+
+router.get('/', asyncHandler(async (req, res) => {
+  const page = Math.max(1, Number(req.query.page || 1));
+  const limit = Math.min(50, Math.max(5, Number(req.query.limit || 12)));
+  const scope = req.query.scope || 'upcoming';
+  const now = new Date();
+  const access = userAccessQuery(req.user._id);
+  const timeQuery = scope === 'history'
+    ? { $or: [{ status: { $in: ['ended', 'cancelled'] } }, { endsAt: { $lt: now } }] }
+    : { status: { $in: ['scheduled', 'live'] }, endsAt: { $gte: now } };
+  const query = { $and: [access, timeQuery] };
+
+  const [items, total] = await Promise.all([
+    Meeting.find(query)
+      .sort(scope === 'history' ? { startsAt: -1 } : { startsAt: 1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .populate(MEETING_POPULATE),
+    Meeting.countDocuments(query)
+  ]);
+
+  res.json({ items, page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) });
+}));
+
+router.post('/', asyncHandler(async (req, res) => {
+  const durationMinutes = normalizeDuration(req.body.durationMinutes);
+  const startInMinutes = Number(req.body.startInMinutes || 0);
+  const startsAt = req.body.startsAt
+    ? toDateOrNow(req.body.startsAt)
+    : new Date(Date.now() + Math.max(0, Number.isFinite(startInMinutes) ? startInMinutes : 0) * 60_000);
+  const endsAt = new Date(startsAt.getTime() + durationMinutes * 60_000);
+  const status = startsAt <= new Date(Date.now() + 15_000) ? 'live' : 'scheduled';
+  const visibility = normalizeVisibility(req.body.visibility, req.body.isPublic);
+
+  let conversation = null;
+  let participantIds = [String(req.user._id)];
+  if (req.body.conversationId) {
+    conversation = await ensureMember(req.body.conversationId, req.user._id);
+    participantIds = conversation.members.map((member) => String(member.user?._id || member.user));
+  } else {
+    const requestedIds = Array.isArray(req.body.participantIds) ? req.body.participantIds.map(String) : [];
+    participantIds = [...new Set([String(req.user._id), ...requestedIds])];
+    const count = await User.countDocuments({ _id: { $in: participantIds }, isActive: true });
+    if (count !== participantIds.length) return res.status(400).json({ message: 'Danh sách người tham gia có tài khoản không hợp lệ.' });
+  }
+
+  const meeting = await Meeting.create({
+    title: req.body.title?.trim() || (conversation?.name ? `Họp nhóm ${conversation.name}` : 'Cuộc họp Nexora'),
+    description: req.body.description || '',
+    roomName: `nexora-${Date.now()}-${nanoid(10)}`,
+    jitsiDomain: req.body.jitsiDomain || env.jitsiDomain,
+    visibility,
+    createdBy: req.user._id,
+    conversation: conversation?._id,
+    participants: participantIds.map((id) => ({
+      user: id,
+      role: String(id) === String(req.user._id) ? 'host' : 'participant',
+      response: String(id) === String(req.user._id) ? 'accepted' : 'pending'
+    })),
+    startsAt,
+    endsAt,
+    durationMinutes,
+    status,
+    actualStartedAt: status === 'live' ? new Date() : undefined,
+    settings: {
+      startWithAudioMuted: Boolean(req.body.startWithAudioMuted),
+      startWithVideoMuted: Boolean(req.body.startWithVideoMuted),
+      hideBranding: req.body.hideBranding !== false,
+      disableDeepLinking: req.body.disableDeepLinking !== false,
+      disableInviteFunctions: req.body.disableInviteFunctions !== false
+    }
+  });
+
+  const io = req.app.get('io');
+  let chatMessage = null;
+  if (conversation && req.body.sendToConversation !== false) {
+    try {
+      const payload = meetingPayload(meeting);
+      chatMessage = await createMessage({
+        io,
+        userId: req.user._id,
+        payload: {
+          conversationId: conversation._id,
+          kind: 'system',
+          eventKey: `meeting:${meeting._id}:invite`,
+          text: `${status === 'live' ? 'Đã tạo phòng họp' : 'Đã đặt lịch họp'}: ${meeting.title}\n${payload.url}`,
+          metadata: { type: 'meeting', meeting: payload }
+        }
+      });
+      meeting.message = chatMessage._id;
+      await meeting.save();
+    } catch (error) {
+      console.error('Không gửi được thẻ cuộc họp vào chat:', error);
+    }
+  } else {
+    const recipients = participantIds.filter((id) => String(id) !== String(req.user._id));
+    await Promise.all(recipients.map((recipient) => createNotification(io, {
+      recipient,
+      actor: req.user._id,
+      type: 'meeting_invite',
+      title: status === 'live' ? 'Phòng họp mới' : 'Lịch họp mới',
+      body: `${req.user.displayName} đã mời bạn tham gia: ${meeting.title}`,
+      data: { meetingId: meeting._id, path: `/meetings/${meeting._id}` }
+    })));
+    for (const id of recipients) io.to(`user:${id}`).emit('meeting:new', meeting);
+  }
+
+  await populateMeeting(meeting);
+  const audience = new Set(participantIds);
+  if (visibility === 'public') io.emit('meeting:new', meeting);
+  else for (const id of audience) io.to(`user:${id}`).emit('meeting:new', meeting);
+  res.status(201).json({ ...meeting.toObject(), chatMessage });
+}));
+
+router.get('/:id', asyncHandler(async (req, res) => {
+  const meeting = await ensureParticipant(req.params.id, req.user._id, { allowConversationMember: true });
+  await syncTimeStatus(meeting);
+  await populateMeeting(meeting);
+  res.json({
+    meeting,
+    jitsi: {
+      domain: meeting.jitsiDomain || env.jitsiDomain,
+      roomName: meeting.roomName,
+      jwt: env.jitsiJwt || '',
+      lang: env.jitsiLanguage || 'vi',
+      requiresHostAuth: isMeetJitsiPublic(meeting.jitsiDomain || env.jitsiDomain) && !env.jitsiJwt,
+      configOverwrite: {
+        prejoinPageEnabled: false,
+        prejoinConfig: { enabled: false },
+        defaultLanguage: env.jitsiLanguage || 'vi',
+        language: env.jitsiLanguage || 'vi',
+        disableDeepLinking: meeting.settings?.disableDeepLinking !== false,
+        disableInviteFunctions: meeting.settings?.disableInviteFunctions !== false,
+        startWithAudioMuted: Boolean(meeting.settings?.startWithAudioMuted),
+        startWithVideoMuted: Boolean(meeting.settings?.startWithVideoMuted),
+        hideConferenceSubject: true,
+        requireDisplayName: true,
+        enableLayerSuspension: false,
+        desktopSharingFrameRate: { min: 5, max: 15 },
+        toolbarButtons: [
+          'microphone', 'camera', 'desktop', 'chat', 'raisehand', 'tileview',
+          'participants-pane', 'settings', 'fullscreen', 'hangup'
+        ]
+      },
+      interfaceConfigOverwrite: {
+        SHOW_JITSI_WATERMARK: false,
+        SHOW_WATERMARK_FOR_GUESTS: false,
+        SHOW_BRAND_WATERMARK: false,
+        SHOW_POWERED_BY: false,
+        MOBILE_APP_PROMO: false,
+        DISABLE_JOIN_LEAVE_NOTIFICATIONS: false,
+        APP_NAME: env.rpName || 'Nexora Connect',
+        NATIVE_APP_NAME: env.rpName || 'Nexora Connect',
+        PROVIDER_NAME: 'Nexora'
+      }
+    }
+  });
+}));
+
+router.post('/:id/join', asyncHandler(async (req, res) => {
+  const meeting = await ensureParticipant(req.params.id, req.user._id, { allowConversationMember: true });
+  const now = new Date();
+  if (meeting.status === 'scheduled') {
+    meeting.status = 'live';
+    meeting.actualStartedAt ||= now;
+  }
+  const participant = meeting.participants.find((item) => String(item.user) === String(req.user._id));
+  if (participant) {
+    participant.response = 'accepted';
+    participant.joinedAt = participant.joinedAt || now;
+    participant.leftAt = undefined;
+  }
+  await meeting.save();
+  const populated = await populateMeeting(meeting);
+  req.app.get('io').to(`meeting:${meeting._id}`).emit('meeting:updated', populated);
+  if ((meeting.visibility || 'private') === 'public') req.app.get('io').emit('meeting:updated', populated);
+  res.json(populated);
+}));
+
+router.post('/:id/leave', asyncHandler(async (req, res) => {
+  const meeting = await ensureParticipant(req.params.id, req.user._id, { allowConversationMember: true });
+  const participant = meeting.participants.find((item) => String(item.user) === String(req.user._id));
+  if (participant) participant.leftAt = new Date();
+  await meeting.save();
+  res.json({ ok: true });
+}));
+
+router.post('/:id/end', asyncHandler(async (req, res) => {
+  const meeting = await ensureParticipant(req.params.id, req.user._id, { allowConversationMember: true });
+  const me = meeting.participants.find((item) => String(item.user) === String(req.user._id));
+  if (String(me?.role) !== 'host' && String(meeting.createdBy) !== String(req.user._id)) return res.status(403).json({ message: 'Chỉ chủ phòng được kết thúc cuộc họp.' });
+  meeting.status = 'ended';
+  meeting.actualEndedAt = new Date();
+  await meeting.save();
+  const populated = await populateMeeting(meeting);
+  req.app.get('io').to(`meeting:${meeting._id}`).emit('meeting:ended', { meetingId: meeting._id });
+  if ((meeting.visibility || 'private') === 'public') req.app.get('io').emit('meeting:ended', { meetingId: meeting._id });
+  res.json(populated);
+}));
+
+export default router;
+

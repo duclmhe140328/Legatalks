@@ -1,0 +1,3195 @@
+/* =========================================================
+   NEXORA CONNECT - FACEBOOK-STYLE SOCIAL DESIGN SPEC
+   Palette and layout follow Thiet_Ke_UI_UX_Mang_Xa_Hoi.pdf
+========================================================= */
+
+:root {
+  --fb-blue: #1877f2;
+  --fb-blue-hover: #166fe5;
+  --fb-green: #42b72a;
+  --fb-red: #e41e3f;
+  --fb-bg: #f0f2f5;
+  --fb-card: #ffffff;
+  --fb-text: #050505;
+  --fb-muted: #65676b;
+  --fb-line: #e4e6eb;
+  --fb-control: #e4e6eb;
+  --fb-soft-blue: #e7f3ff;
+  --fb-hover: #f2f2f2;
+  --fb-shadow: 0 1px 2px rgba(0, 0, 0, .10);
+  --fb-shadow-large: 0 12px 34px rgba(0, 0, 0, .18);
+  --top-nav-height: 56px;
+  font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: var(--fb-text);
+  background: var(--fb-bg);
+}
+
+html,
+body,
+#root {
+  min-width: 320px;
+  min-height: 100%;
+  margin: 0;
+  background: var(--fb-bg) !important;
+  color: var(--fb-text) !important;
+  font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  overflow-x: hidden;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button,
+input,
+textarea,
+select {
+  font-family: inherit;
+}
+
+button {
+  color: inherit;
+}
+
+img,
+video {
+  max-width: 100%;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: #bcc0c4;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.card {
+  border: 0 !important;
+  border-radius: 12px !important;
+  background: var(--fb-card) !important;
+  color: var(--fb-text) !important;
+  box-shadow: var(--fb-shadow) !important;
+}
+
+.muted,
+.empty-mini,
+.section-head p,
+[class*="subtitle"] {
+  color: var(--fb-muted) !important;
+}
+
+.avatar {
+  border: 0 !important;
+  background: #d8dadf;
+}
+
+.avatar-fallback {
+  border: 0 !important;
+  background: #dbeafe !important;
+  color: var(--fb-blue) !important;
+}
+
+.primary-btn,
+.primary-small,
+.publish-btn,
+.send-btn,
+.soft-btn,
+.secondary-btn,
+.ghost-danger {
+  border-radius: 8px !important;
+  box-shadow: none !important;
+  font-weight: 700 !important;
+}
+
+.primary-btn,
+.primary-small,
+.publish-btn,
+.send-btn {
+  border: 0 !important;
+  background: var(--fb-blue) !important;
+  color: #fff !important;
+}
+
+.primary-btn:hover,
+.primary-small:hover,
+.publish-btn:hover,
+.send-btn:hover {
+  transform: none !important;
+  filter: none !important;
+  background: var(--fb-blue-hover) !important;
+}
+
+.secondary-btn,
+.soft-btn {
+  border: 0 !important;
+  background: var(--fb-control) !important;
+  color: var(--fb-text) !important;
+}
+
+.icon-btn {
+  border: 0 !important;
+  border-radius: 50% !important;
+  background: var(--fb-control) !important;
+  color: var(--fb-text) !important;
+  box-shadow: none !important;
+}
+
+.badge,
+.nav-unread,
+.conversation-unread {
+  background: var(--fb-red) !important;
+  color: #fff !important;
+}
+
+.form-status {
+  border: 1px solid #bfdbfe !important;
+  border-radius: 8px !important;
+  background: #eff6ff !important;
+  color: #1d4ed8 !important;
+}
+
+input:not([type="checkbox"]):not([type="radio"]),
+textarea,
+select {
+  border-color: #ccd0d5 !important;
+  border-radius: 8px !important;
+  background: #fff !important;
+  color: var(--fb-text) !important;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):focus,
+textarea:focus,
+select:focus {
+  border-color: var(--fb-blue) !important;
+  box-shadow: 0 0 0 2px rgba(24, 119, 242, .14) !important;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #8a8d91 !important;
+}
+
+/* =========================================================
+   LOGIN / REGISTER
+========================================================= */
+
+.nexora-auth,
+.nx-auth-page,
+.nx-auth-v2,
+.auth-page {
+  min-height: 100svh !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 520px) !important;
+  overflow: auto !important;
+  background: var(--fb-bg) !important;
+  color: var(--fb-text) !important;
+}
+
+.nexora-auth-left,
+.nx-auth-left,
+.nx-auth-v2__intro,
+.auth-visual {
+  min-height: 100svh !important;
+  padding: clamp(34px, 6vw, 90px) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  background: transparent !important;
+  color: var(--fb-text) !important;
+}
+
+.nexora-auth-glow,
+.visual-orb,
+.auth-visual::after {
+  display: none !important;
+}
+
+.nexora-auth-brand,
+.nx-brand,
+.mobile-brand {
+  position: absolute !important;
+  top: 34px !important;
+  left: clamp(34px, 6vw, 90px) !important;
+}
+
+.nexora-auth-logo,
+.nx-logo,
+.nx-auth-v2__logo,
+.brand-mark {
+  border-radius: 50% !important;
+  background: var(--fb-blue) !important;
+  color: #fff !important;
+  box-shadow: none !important;
+}
+
+.nexora-auth-brand h1,
+.nexora-auth-hero h2,
+.nexora-auth-hero h2 span,
+.nx-auth-hero h1,
+.nx-hero h1,
+.auth-copy h1 {
+  background: none !important;
+  color: var(--fb-blue) !important;
+  -webkit-text-fill-color: initial !important;
+}
+
+.nexora-auth-hero h2,
+.nx-auth-hero h1,
+.nx-hero h1,
+.auth-copy h1 {
+  max-width: 680px !important;
+  margin: 0 0 18px !important;
+  font-size: clamp(44px, 5vw, 68px) !important;
+  line-height: 1.02 !important;
+  letter-spacing: -3px !important;
+}
+
+.nexora-auth-hero > p,
+.nx-auth-hero > p,
+.nx-hero p,
+.auth-copy p {
+  max-width: 580px !important;
+  color: #1c1e21 !important;
+  font-size: 22px !important;
+  line-height: 1.35 !important;
+  font-weight: 400 !important;
+}
+
+.nexora-auth-kicker,
+.nexora-auth-features,
+.nx-auth-features,
+.nx-feature-grid,
+.feature-pills {
+  display: none !important;
+}
+
+.nexora-auth-right,
+.nx-auth-card-wrap,
+.nx-auth-v2__panel,
+.auth-panel {
+  min-height: 100svh !important;
+  padding: 24px !important;
+  display: grid !important;
+  place-items: center !important;
+  border: 0 !important;
+  background: transparent !important;
+  backdrop-filter: none !important;
+}
+
+.nexora-auth-card,
+.nx-auth-card,
+.nx-auth-v2__card,
+.auth-card {
+  width: min(100%, 420px) !important;
+  padding: 18px !important;
+  border: 0 !important;
+  border-radius: 10px !important;
+  background: #fff !important;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, .18) !important;
+}
+
+.nexora-auth-title,
+.auth-card h2 {
+  color: var(--fb-text) !important;
+  text-align: center;
+}
+
+.nexora-auth-subtitle,
+.auth-card > p {
+  color: var(--fb-muted) !important;
+  text-align: center;
+}
+
+.nexora-auth-field input,
+.nx-field input,
+.auth-card input,
+.auth-card select {
+  min-height: 52px !important;
+  border-radius: 6px !important;
+  border-color: #dddfe2 !important;
+  font-size: 16px !important;
+  font-weight: 400 !important;
+}
+
+.nexora-auth-tabs,
+.auth-tabs {
+  border-radius: 8px !important;
+  background: #f0f2f5 !important;
+}
+
+.nexora-auth-tab,
+.auth-tabs button {
+  border-radius: 6px !important;
+}
+
+.nexora-auth-tab.active,
+.auth-tabs button.active {
+  background: var(--fb-blue) !important;
+  color: #fff !important;
+  box-shadow: none !important;
+}
+
+.nexora-auth-btn,
+.nx-primary,
+.auth-card .primary-btn {
+  min-height: 48px !important;
+  border-radius: 6px !important;
+  background: var(--fb-blue) !important;
+  color: #fff !important;
+  box-shadow: none !important;
+}
+
+.nexora-auth-foot a,
+.nx-footer-link a,
+.auth-foot a,
+.nexora-auth-link-btn,
+.nx-ghost {
+  color: var(--fb-blue) !important;
+}
+
+/* =========================================================
+   TOP NAV + THREE-COLUMN APP SHELL
+========================================================= */
+
+.fb-shell {
+  min-height: 100svh;
+  background: var(--fb-bg);
+  color: var(--fb-text);
+}
+
+.fb-top-nav {
+  position: fixed;
+  z-index: 1000;
+  inset: 0 0 auto;
+  height: var(--top-nav-height);
+  display: grid;
+  grid-template-columns: minmax(250px, 1fr) minmax(360px, 680px) minmax(250px, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  border-bottom: 1px solid #dddfe2;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .10);
+}
+
+.fb-top-left,
+.fb-top-actions,
+.fb-top-tabs,
+.fb-global-search,
+.fb-side-profile,
+.fb-contact-row,
+.fb-quick-person,
+.fb-upcoming-head,
+.fb-upcoming-row,
+.fb-meeting-quickjoin > div,
+.fb-meeting-code-form {
+  display: flex;
+  align-items: center;
+}
+
+.fb-top-left {
+  min-width: 0;
+  gap: 8px;
+}
+
+.fb-logo {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--fb-blue);
+  color: #fff;
+  font-size: 24px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.fb-global-search {
+  width: min(100%, 255px);
+  min-height: 40px;
+  gap: 8px;
+  padding: 0 13px;
+  border-radius: 999px;
+  background: var(--fb-bg);
+  color: var(--fb-muted);
+}
+
+.fb-global-search input {
+  min-width: 0;
+  min-height: 0 !important;
+  width: 100%;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  font-size: 15px;
+}
+
+.fb-top-tabs {
+  align-self: stretch;
+  justify-content: center;
+  gap: 8px;
+}
+
+.fb-top-tabs a {
+  position: relative;
+  min-width: 112px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 8px;
+  color: var(--fb-muted);
+}
+
+.fb-top-tabs a:hover {
+  height: calc(100% - 8px);
+  align-self: center;
+  background: var(--fb-hover);
+}
+
+.fb-top-tabs a.active {
+  color: var(--fb-blue);
+}
+
+.fb-top-tabs a.active::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  border-radius: 3px 3px 0 0;
+  background: var(--fb-blue);
+}
+
+.fb-top-tabs span {
+  display: none;
+}
+
+.fb-top-actions {
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.fb-circle-action,
+.fb-avatar-button,
+.fb-mobile-menu,
+.fb-contact-heading button,
+.fb-quick-chat header > div button {
+  position: relative;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--fb-control);
+  color: var(--fb-text);
+  cursor: pointer;
+}
+
+.fb-circle-action:hover,
+.fb-circle-action.active,
+.fb-contact-heading button:hover,
+.fb-quick-chat header > div button:hover {
+  background: #d8dadf;
+}
+
+.fb-avatar-button {
+  background: transparent;
+}
+
+.fb-action-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  display: grid;
+  place-items: center;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  background: var(--fb-red);
+  color: #fff;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.fb-mobile-menu {
+  display: none;
+}
+
+.fb-popover-anchor {
+  position: relative;
+}
+
+.fb-notification-popover,
+.fb-profile-menu {
+  position: absolute;
+  top: 48px;
+  right: 0;
+  width: min(380px, calc(100vw - 24px));
+  overflow: hidden;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: var(--fb-shadow-large);
+}
+
+.fb-popover-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 16px 16px 10px;
+}
+
+.fb-popover-title h3 {
+  margin: 0;
+  font-size: 24px;
+}
+
+.fb-popover-title span {
+  display: block;
+  margin-top: 3px;
+  color: var(--fb-muted);
+  font-size: 12px;
+}
+
+.fb-popover-title button,
+.fb-see-all {
+  border: 0;
+  background: transparent;
+  color: var(--fb-blue);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.fb-notification-list {
+  max-height: 430px;
+  overflow: auto;
+  padding: 0 8px;
+}
+
+.fb-notification-row {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 10px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fb-notification-row:hover {
+  background: var(--fb-hover);
+}
+
+.fb-notification-row.unread {
+  background: #edf5ff;
+}
+
+.fb-notification-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.fb-notification-copy b,
+.fb-notification-copy p,
+.fb-notification-copy time {
+  display: block;
+}
+
+.fb-notification-copy b {
+  font-size: 14px;
+}
+
+.fb-notification-copy p {
+  margin: 3px 0;
+  color: #1c1e21;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.fb-notification-copy time {
+  color: var(--fb-blue);
+  font-size: 12px;
+}
+
+.fb-see-all {
+  width: 100%;
+  min-height: 42px;
+  border-top: 1px solid var(--fb-line);
+}
+
+.fb-profile-menu {
+  width: 340px;
+  padding: 8px;
+}
+
+.fb-profile-menu > button {
+  width: 100%;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fb-profile-menu > button:hover {
+  background: var(--fb-hover);
+}
+
+.fb-profile-summary {
+  padding: 10px !important;
+  box-shadow: var(--fb-shadow);
+}
+
+.fb-profile-summary span,
+.fb-profile-summary b,
+.fb-profile-summary small {
+  display: block;
+}
+
+.fb-profile-summary small {
+  margin-top: 3px;
+  color: var(--fb-muted);
+}
+
+.fb-menu-divider {
+  height: 1px;
+  margin: 8px 4px;
+  background: var(--fb-line);
+}
+
+.fb-app-body {
+  min-height: 100svh;
+  padding-top: var(--top-nav-height);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-content: center;
+  background: var(--fb-bg);
+}
+
+.fb-app-body.with-left {
+  grid-template-columns: 280px minmax(0, 1fr);
+}
+
+.fb-app-body.with-left.with-right {
+  grid-template-columns: 280px minmax(0, 720px) 300px;
+}
+
+.fb-left-rail,
+.fb-right-rail {
+  position: sticky;
+  top: var(--top-nav-height);
+  height: calc(100svh - var(--top-nav-height));
+  overflow-y: auto;
+  background: var(--fb-bg);
+}
+
+.fb-left-rail {
+  padding: 16px 10px 18px 16px;
+}
+
+.fb-side-profile {
+  gap: 10px;
+  min-height: 48px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  color: var(--fb-text);
+  font-weight: 700;
+}
+
+.fb-side-profile:hover,
+.fb-side-nav a:hover,
+.fb-contact-row:hover {
+  background: #e4e6e9;
+}
+
+.fb-side-nav {
+  display: grid;
+  gap: 2px;
+  margin-top: 6px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #ced0d4;
+}
+
+.fb-side-nav a {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  color: var(--fb-text);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.fb-side-nav a.active {
+  background: var(--fb-soft-blue);
+  color: var(--fb-blue);
+}
+
+.fb-side-nav a > i {
+  margin-left: auto;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--fb-red);
+  color: #fff;
+  font-size: 10px;
+  font-style: normal;
+}
+
+.fb-side-icon {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #dbeafe;
+  color: var(--fb-blue);
+}
+
+.fb-upcoming-card {
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: var(--fb-shadow);
+}
+
+.fb-upcoming-head {
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.fb-upcoming-head > span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.fb-upcoming-head button {
+  border: 0;
+  background: transparent;
+  color: var(--fb-blue);
+  cursor: pointer;
+}
+
+.fb-upcoming-card > p {
+  margin: 12px 0;
+  color: var(--fb-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.fb-upcoming-row {
+  width: 100%;
+  gap: 9px;
+  padding: 9px 0;
+  border: 0;
+  border-bottom: 1px solid var(--fb-line);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fb-upcoming-row > span:last-child {
+  min-width: 0;
+}
+
+.fb-upcoming-row b,
+.fb-upcoming-row small {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.fb-upcoming-row b {
+  font-size: 12px;
+}
+
+.fb-upcoming-row small {
+  margin-top: 2px;
+  color: var(--fb-muted);
+  font-size: 10px;
+}
+
+.fb-meeting-mini-icon,
+.fb-meeting-quick-icon,
+.fb-right-promo-icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--fb-soft-blue);
+  color: var(--fb-blue);
+}
+
+.fb-meeting-mini-icon {
+  width: 32px;
+  height: 32px;
+}
+
+.fb-create-meeting {
+  width: 100%;
+  min-height: 34px;
+  margin-top: 10px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--fb-soft-blue);
+  color: var(--fb-blue);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.fb-side-footer {
+  padding: 16px 8px;
+  color: var(--fb-muted);
+  font-size: 11px;
+}
+
+.fb-main-route {
+  min-width: 0;
+  width: 100%;
+}
+
+.fb-route-view {
+  min-width: 0;
+  padding: 20px 18px 32px;
+}
+
+.fb-app-body.chat-route .fb-route-view {
+  height: calc(100svh - var(--top-nav-height));
+  padding: 12px;
+}
+
+.fb-app-body.chat-route .fb-main-route {
+  max-width: none;
+}
+
+.fb-right-rail {
+  padding: 18px 16px 20px 10px;
+}
+
+.fb-contact-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 2px 4px 10px;
+}
+
+.fb-contact-heading h3 {
+  margin: 0;
+  color: var(--fb-muted);
+  font-size: 16px;
+}
+
+.fb-contact-heading > div {
+  display: flex;
+  gap: 4px;
+}
+
+.fb-contact-heading button {
+  width: 32px;
+  height: 32px;
+  background: transparent;
+}
+
+.fb-contact-list {
+  display: grid;
+  gap: 2px;
+}
+
+.fb-contact-row {
+  width: 100%;
+  min-height: 44px;
+  gap: 10px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.fb-contact-avatar {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.fb-contact-avatar > i {
+  position: absolute;
+  right: -1px;
+  bottom: 1px;
+  width: 11px;
+  height: 11px;
+  border: 2px solid var(--fb-bg);
+  border-radius: 50%;
+  background: var(--fb-green);
+}
+
+.fb-right-promo {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 18px;
+  padding: 14px;
+  border-top: 1px solid #ced0d4;
+}
+
+.fb-right-promo-icon {
+  width: 38px;
+  height: 38px;
+}
+
+.fb-right-promo b {
+  font-size: 13px;
+}
+
+.fb-right-promo p {
+  margin: 4px 0 8px;
+  color: var(--fb-muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.fb-right-promo button {
+  padding: 6px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--fb-soft-blue);
+  color: var(--fb-blue);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.fb-empty-small {
+  padding: 20px 10px;
+  color: var(--fb-muted);
+  text-align: center;
+  font-size: 12px;
+}
+
+.fb-mobile-bottom-nav {
+  display: none;
+}
+
+/* Messenger-like contact popup */
+.fb-quick-chat {
+  position: fixed;
+  z-index: 1200;
+  right: 24px;
+  bottom: 0;
+  width: min(340px, calc(100vw - 24px));
+  overflow: hidden;
+  border-radius: 10px 10px 0 0;
+  background: #fff;
+  box-shadow: 0 0 18px rgba(0, 0, 0, .24);
+}
+
+.fb-quick-chat header {
+  min-height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .12);
+}
+
+.fb-quick-person {
+  min-width: 0;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fb-quick-person > span:last-child {
+  min-width: 0;
+}
+
+.fb-quick-person b,
+.fb-quick-person small {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.fb-quick-person small {
+  color: var(--fb-muted);
+  font-size: 10px;
+}
+
+.fb-quick-chat header > div {
+  display: flex;
+  gap: 3px;
+}
+
+.fb-quick-chat header > div button {
+  width: 30px;
+  height: 30px;
+  background: transparent;
+  color: var(--fb-blue);
+}
+
+.fb-quick-chat-body {
+  min-height: 240px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  padding: 24px;
+  text-align: center;
+}
+
+.fb-quick-chat-body p {
+  margin: 0;
+  color: var(--fb-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.fb-quick-chat-body button {
+  min-height: 36px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--fb-blue);
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* Meeting code bar */
+.fb-meeting-quickjoin {
+  max-width: 1180px;
+  margin: 20px auto 0;
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: var(--fb-shadow);
+}
+
+.fb-meeting-quickjoin > div:first-child {
+  gap: 11px;
+}
+
+.fb-meeting-quick-icon {
+  width: 44px;
+  height: 44px;
+}
+
+.fb-meeting-quickjoin b,
+.fb-meeting-quickjoin small {
+  display: block;
+}
+
+.fb-meeting-quickjoin small {
+  margin-top: 3px;
+  color: var(--fb-muted);
+}
+
+.fb-meeting-code-form {
+  gap: 8px;
+}
+
+.fb-meeting-code-form input {
+  min-width: 230px;
+  min-height: 40px;
+  padding: 0 12px;
+}
+
+.fb-meeting-code-form button {
+  min-height: 40px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--fb-blue);
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* =========================================================
+   NEWSFEED
+========================================================= */
+
+.timeline-shell,
+.timeline-scroll-area,
+.timeline-route-view {
+  background: transparent !important;
+}
+
+.timeline-tabbar-wrap {
+  position: static !important;
+  margin: 0 auto 14px !important;
+  padding: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.timeline-tabs {
+  max-width: 680px !important;
+  margin: 0 auto !important;
+  padding: 4px !important;
+  border: 0 !important;
+  border-radius: 12px !important;
+  background: #fff !important;
+  box-shadow: var(--fb-shadow) !important;
+}
+
+.timeline-tabs button {
+  border-radius: 8px !important;
+  color: var(--fb-muted) !important;
+}
+
+.timeline-tabs button.active {
+  background: var(--fb-soft-blue) !important;
+  color: var(--fb-blue) !important;
+}
+
+.timeline-tab-icon {
+  background: transparent !important;
+  color: inherit !important;
+}
+
+.timeline-page {
+  max-width: 680px !important;
+  margin: 0 auto !important;
+  display: block !important;
+}
+
+.timeline-main {
+  display: grid !important;
+  gap: 14px !important;
+}
+
+.timeline-side {
+  display: none !important;
+}
+
+.create-post,
+.stories-card,
+.post-card {
+  border: 0 !important;
+  border-radius: 12px !important;
+  background: #fff !important;
+  color: var(--fb-text) !important;
+  box-shadow: var(--fb-shadow) !important;
+}
+
+.create-post {
+  padding: 12px 16px 10px !important;
+}
+
+.create-row {
+  align-items: flex-start !important;
+}
+
+.create-row textarea {
+  min-height: 42px !important;
+  padding: 10px 15px !important;
+  resize: none !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: var(--fb-bg) !important;
+  box-shadow: none !important;
+  color: var(--fb-text) !important;
+  font-size: 16px !important;
+}
+
+.create-actions {
+  margin-top: 10px !important;
+  padding-top: 8px !important;
+  border-top-color: var(--fb-line) !important;
+}
+
+.create-actions > div:first-child {
+  flex: 1;
+  justify-content: space-around;
+}
+
+.create-actions button:not(.publish-btn) {
+  min-height: 36px;
+  padding: 6px 10px !important;
+  border-radius: 8px !important;
+  color: var(--fb-muted) !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+}
+
+.create-actions button:not(.publish-btn):hover {
+  background: var(--fb-hover) !important;
+}
+
+.create-actions .create-meeting-action {
+  color: var(--fb-blue) !important;
+}
+
+.create-actions select {
+  border: 0 !important;
+  background: var(--fb-control) !important;
+  color: var(--fb-text) !important;
+}
+
+.stories-card {
+  padding: 12px !important;
+}
+
+.stories-create {
+  gap: 8px !important;
+}
+
+.stories-create input {
+  background: var(--fb-bg) !important;
+}
+
+.stories-create button,
+.story-send {
+  border-radius: 7px !important;
+  background: var(--fb-control) !important;
+  color: var(--fb-text) !important;
+}
+
+.story-send {
+  background: var(--fb-blue) !important;
+  color: #fff !important;
+}
+
+.story-chip {
+  color: var(--fb-text) !important;
+}
+
+.story-thumb {
+  border-color: var(--fb-blue) !important;
+}
+
+.post-card {
+  overflow: visible !important;
+}
+
+.post-card > header {
+  padding: 12px 16px 7px !important;
+}
+
+.post-card header b {
+  color: var(--fb-text) !important;
+  font-size: 14px !important;
+}
+
+.post-card header span,
+.post-card header button {
+  color: var(--fb-muted) !important;
+}
+
+.post-text {
+  color: var(--fb-text) !important;
+  font-size: 15px !important;
+  line-height: 1.5 !important;
+}
+
+.post-media {
+  max-height: none !important;
+  background: #000;
+}
+
+.post-media img,
+.post-media video,
+.post-media-image,
+.post-media-video {
+  max-height: 680px !important;
+  object-fit: contain !important;
+  background: #000 !important;
+}
+
+.post-counts {
+  color: var(--fb-muted) !important;
+  font-size: 13px !important;
+}
+
+.post-actions {
+  grid-template-columns: repeat(3, 1fr) !important;
+  margin: 0 16px !important;
+  padding: 4px 0 !important;
+  border-color: var(--fb-line) !important;
+}
+
+.post-actions button {
+  min-height: 36px;
+  border-radius: 7px !important;
+  color: var(--fb-muted) !important;
+  font-weight: 700 !important;
+}
+
+.post-actions button:hover {
+  background: var(--fb-hover) !important;
+}
+
+.post-actions button.liked {
+  color: var(--fb-blue) !important;
+}
+
+.comment-item > div,
+.comment-bubble {
+  background: var(--fb-bg) !important;
+  color: var(--fb-text) !important;
+}
+
+.comment-item p,
+.comment-bubble p {
+  color: var(--fb-text) !important;
+}
+
+.comment-box input,
+.comment-composer input,
+.comment-composer textarea {
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: var(--fb-bg) !important;
+  box-shadow: none !important;
+}
+
+.video-journal-layout,
+.community-groups-page,
+.live-panel {
+  color: var(--fb-text);
+}
+
+/* =========================================================
+   MESSENGER HUB
+========================================================= */
+
+.chat-layout {
+  height: 100% !important;
+  min-height: 540px !important;
+  overflow: hidden !important;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr) !important;
+  border: 0 !important;
+  border-radius: 12px !important;
+  background: #fff !important;
+  color: var(--fb-text) !important;
+  box-shadow: var(--fb-shadow) !important;
+}
+
+.conversation-pane {
+  border-right: 1px solid var(--fb-line) !important;
+  background: #fff !important;
+}
+
+.pane-title {
+  padding: 18px 16px 10px !important;
+}
+
+.pane-title h2 {
+  color: var(--fb-text) !important;
+  font-size: 24px !important;
+}
+
+.pane-title span {
+  color: var(--fb-muted) !important;
+}
+
+.search-box,
+.message-search {
+  border: 0 !important;
+  background: var(--fb-bg) !important;
+  color: var(--fb-muted) !important;
+}
+
+.search-box input,
+.message-search input {
+  min-height: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: var(--fb-text) !important;
+  box-shadow: none !important;
+}
+
+.conversation-list {
+  padding: 0 8px 10px !important;
+}
+
+.conversation-item {
+  border-radius: 8px !important;
+  color: var(--fb-text) !important;
+}
+
+.conversation-item:hover {
+  background: var(--fb-hover) !important;
+}
+
+.conversation-item.active {
+  background: var(--fb-soft-blue) !important;
+}
+
+.conversation-copy b {
+  color: var(--fb-text) !important;
+  font-size: 14px !important;
+}
+
+.conversation-copy p,
+.conversation-copy time {
+  color: var(--fb-muted) !important;
+}
+
+.online-dot {
+  border-color: #fff !important;
+  background: var(--fb-green) !important;
+}
+
+.message-pane {
+  background: #fff !important;
+}
+
+.message-head {
+  border-bottom-color: var(--fb-line) !important;
+  background: #fff !important;
+}
+
+.chat-person {
+  border: 0 !important;
+  background: transparent !important;
+  color: var(--fb-text) !important;
+  text-align: left;
+}
+
+.chat-person b {
+  color: var(--fb-text) !important;
+}
+
+.chat-person span {
+  color: var(--fb-muted) !important;
+}
+
+.head-actions button,
+.composer-row > button,
+.extras-wrap > button,
+.message-tools > button {
+  color: var(--fb-blue) !important;
+}
+
+.head-actions button:hover,
+.composer-row > button:hover {
+  background: var(--fb-soft-blue) !important;
+}
+
+.message-search {
+  margin: 0 !important;
+  padding: 7px 18px !important;
+  border-radius: 0 !important;
+  border-bottom: 1px solid var(--fb-line) !important;
+}
+
+.message-scroll {
+  background: #fff !important;
+}
+
+.date-divider {
+  background: var(--fb-bg) !important;
+  color: var(--fb-muted) !important;
+}
+
+.message-bubble {
+  border: 0 !important;
+  background: var(--fb-control) !important;
+  color: var(--fb-text) !important;
+  box-shadow: none !important;
+}
+
+.mine .message-bubble {
+  background: var(--fb-blue) !important;
+  color: #fff !important;
+}
+
+.message-bubble p {
+  color: inherit !important;
+}
+
+.bubble-meta {
+  color: rgba(0, 0, 0, .48) !important;
+}
+
+.mine .bubble-meta {
+  color: rgba(255, 255, 255, .72) !important;
+}
+
+.bubble-meta .read {
+  color: #dbeafe !important;
+}
+
+.reaction-summary span {
+  border-color: var(--fb-line) !important;
+  background: #fff !important;
+  color: var(--fb-text) !important;
+}
+
+.message-menu,
+.extras-panel,
+.chat-more-menu {
+  border: 0 !important;
+  background: #fff !important;
+  color: var(--fb-text) !important;
+  box-shadow: var(--fb-shadow-large) !important;
+}
+
+.message-menu > button,
+.extras-panel button,
+.chat-more-menu button {
+  color: var(--fb-text) !important;
+}
+
+.message-menu > button:hover,
+.extras-panel button:hover,
+.chat-more-menu button:hover {
+  background: var(--fb-hover) !important;
+}
+
+.composer {
+  border-top-color: var(--fb-line) !important;
+  background: #fff !important;
+}
+
+.composer-row textarea {
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: var(--fb-bg) !important;
+  color: var(--fb-text) !important;
+  box-shadow: none !important;
+}
+
+.empty-state {
+  color: var(--fb-muted) !important;
+}
+
+.empty-state h3 {
+  color: var(--fb-text) !important;
+}
+
+.empty-icon {
+  border: 0 !important;
+  background: var(--fb-soft-blue) !important;
+}
+
+/* =========================================================
+   MEETING HUB + ACTIVE CALL
+========================================================= */
+
+.meetings-page {
+  max-width: 1180px !important;
+}
+
+.meetings-hero {
+  padding: 26px !important;
+  border-radius: 12px !important;
+  background: #fff !important;
+  color: var(--fb-text) !important;
+}
+
+.meetings-hero h2 {
+  color: var(--fb-text) !important;
+}
+
+.meetings-hero p {
+  color: var(--fb-muted) !important;
+}
+
+.eyebrow {
+  color: var(--fb-blue) !important;
+}
+
+.meeting-hero-actions .primary-btn {
+  width: auto !important;
+}
+
+.meeting-list-panel,
+.meeting-side {
+  border-radius: 12px !important;
+  background: #fff !important;
+  color: var(--fb-text) !important;
+}
+
+.meeting-tabs {
+  border-bottom-color: var(--fb-line) !important;
+}
+
+.meeting-tabs button {
+  color: var(--fb-muted) !important;
+}
+
+.meeting-tabs button.active {
+  color: var(--fb-blue) !important;
+  border-bottom-color: var(--fb-blue) !important;
+}
+
+.meeting-card {
+  border-color: var(--fb-line) !important;
+  background: #fff !important;
+  color: var(--fb-text) !important;
+  box-shadow: none !important;
+}
+
+.meeting-card:hover,
+.meeting-card.active {
+  border-color: #b7d4fb !important;
+  background: #f7fbff !important;
+}
+
+.meeting-card-copy b {
+  color: var(--fb-text) !important;
+}
+
+.meeting-card-copy span,
+.meeting-card-copy p,
+.meeting-people {
+  color: var(--fb-muted) !important;
+}
+
+.meeting-card-actions button:first-child {
+  background: var(--fb-blue) !important;
+  color: #fff !important;
+}
+
+.meeting-card-actions button:last-child {
+  background: var(--fb-control) !important;
+  color: var(--fb-text) !important;
+}
+
+.meeting-side label,
+.meeting-modal label {
+  color: var(--fb-text) !important;
+}
+
+.meeting-side input,
+.meeting-modal input,
+.meeting-modal textarea {
+  background: #fff !important;
+  color: var(--fb-text) !important;
+}
+
+.modal-backdrop {
+  background: rgba(0, 0, 0, .50) !important;
+  backdrop-filter: none !important;
+}
+
+.modal-card,
+.meeting-modal {
+  border: 0 !important;
+  border-radius: 12px !important;
+  background: #fff !important;
+  color: var(--fb-text) !important;
+  box-shadow: var(--fb-shadow-large) !important;
+}
+
+.member-picker label {
+  background: var(--fb-bg) !important;
+  color: var(--fb-text) !important;
+}
+
+/* Active meeting stays dark, as required by the specification. */
+.jitsi-stage,
+.call-window,
+.nexora-meet-stage {
+  border-color: rgba(255, 255, 255, .12) !important;
+  background: #0b0b0d !important;
+  color: #fff !important;
+}
+
+.jitsi-stage-head,
+.call-head,
+.call-controls {
+  border-color: rgba(255, 255, 255, .12) !important;
+  background: #171719 !important;
+  color: #fff !important;
+}
+
+.jitsi-stage-head span,
+.jitsi-note,
+.call-head span {
+  color: rgba(255, 255, 255, .68) !important;
+}
+
+.jitsi-container,
+.video-grid,
+.nexora-meet-grid {
+  background: #000 !important;
+}
+
+.call-controls button,
+.meeting-bottom-controls button {
+  background: #3a3b3c !important;
+  color: #fff !important;
+}
+
+.call-controls .hangup,
+.ghost-danger,
+.meeting-leave-button {
+  background: var(--fb-red) !important;
+  color: #fff !important;
+}
+
+.meeting-room-mode .fb-top-nav,
+.meeting-room-mode .fb-mobile-bottom-nav {
+  display: none !important;
+}
+
+.meeting-room-mode .fb-app-body {
+  padding-top: 0;
+  display: block;
+  background: #000;
+}
+
+.meeting-room-mode .fb-route-view {
+  padding: 0;
+}
+
+.meeting-room-mode .meetings-page {
+  max-width: none !important;
+  padding: 0 !important;
+}
+
+.meeting-room-mode .meetings-hero,
+.meeting-room-mode .meetings-grid,
+.meeting-room-mode .fb-meeting-quickjoin {
+  display: none !important;
+}
+
+.meeting-room-mode .jitsi-stage {
+  min-height: 100svh !important;
+  border-radius: 0 !important;
+}
+
+.meeting-room-mode .jitsi-container {
+  min-height: calc(100svh - 112px) !important;
+}
+
+/* =========================================================
+   PROFILE, CONTACTS, NOTIFICATIONS, TOOLS
+========================================================= */
+
+.profile-page,
+.contacts-page,
+.notifications-page,
+.integrations-page,
+.miniapps-page,
+.call-history-page {
+  color: var(--fb-text) !important;
+}
+
+.profile-card,
+.contacts-main,
+.tool-card,
+.notification-page-card,
+.integration-card,
+.miniapp-card,
+.call-history-card,
+.nx-fb-profile__card,
+.nx-fb-profile__hero {
+  border: 0 !important;
+  border-radius: 12px !important;
+  background: #fff !important;
+  color: var(--fb-text) !important;
+  box-shadow: var(--fb-shadow) !important;
+}
+
+.profile-cover,
+.nx-fb-profile__cover {
+  background-color: #b7d4fb !important;
+}
+
+.profile-avatar .avatar {
+  border-color: #fff !important;
+}
+
+.profile-tabs,
+.nx-fb-profile__tabs {
+  border-color: var(--fb-line) !important;
+}
+
+.profile-tabs button.active,
+.nx-fb-profile__tab.is-active {
+  color: var(--fb-blue) !important;
+  border-bottom-color: var(--fb-blue) !important;
+}
+
+.contact-row {
+  border-bottom-color: var(--fb-line) !important;
+}
+
+.contact-row b {
+  color: var(--fb-text) !important;
+}
+
+.contact-row span,
+.tool-card p {
+  color: var(--fb-muted) !important;
+}
+
+.contact-actions button {
+  background: var(--fb-control) !important;
+  color: var(--fb-text) !important;
+}
+
+.contact-actions button.accept {
+  background: var(--fb-blue) !important;
+  color: #fff !important;
+}
+
+.notification-item,
+.notification-page-item {
+  color: var(--fb-text) !important;
+}
+
+.notification-item:hover,
+.notification-page-item:hover {
+  background: var(--fb-hover) !important;
+}
+
+/* =========================================================
+   RESPONSIVE
+========================================================= */
+
+@media (max-width: 1250px) {
+  .fb-app-body.with-left.with-right {
+    grid-template-columns: 250px minmax(0, 720px);
+  }
+
+  .fb-right-rail {
+    display: none;
+  }
+
+  .fb-app-body.with-left {
+    grid-template-columns: 250px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 980px) {
+  .nexora-auth,
+  .nx-auth-page,
+  .nx-auth-v2,
+  .auth-page {
+    grid-template-columns: 1fr !important;
+  }
+
+  .nexora-auth-left,
+  .nx-auth-left,
+  .nx-auth-v2__intro,
+  .auth-visual {
+    min-height: auto !important;
+    padding: 42px 22px 10px !important;
+    text-align: center;
+  }
+
+  .nexora-auth-brand,
+  .nx-brand,
+  .mobile-brand {
+    position: static !important;
+    justify-content: center;
+    margin-bottom: 30px;
+  }
+
+  .nexora-auth-hero h2,
+  .nx-auth-hero h1,
+  .nx-hero h1,
+  .auth-copy h1 {
+    margin-inline: auto !important;
+    font-size: 42px !important;
+  }
+
+  .nexora-auth-hero > p,
+  .nx-auth-hero > p,
+  .nx-hero p,
+  .auth-copy p {
+    margin-inline: auto !important;
+    font-size: 18px !important;
+  }
+
+  .nexora-auth-right,
+  .nx-auth-card-wrap,
+  .nx-auth-v2__panel,
+  .auth-panel {
+    min-height: auto !important;
+    padding: 12px 16px 34px !important;
+  }
+
+  .fb-top-nav {
+    grid-template-columns: 1fr auto;
+  }
+
+  .fb-top-tabs {
+    display: none;
+  }
+
+  .fb-global-search {
+    width: min(100%, 360px);
+  }
+
+  .fb-mobile-menu {
+    display: grid;
+  }
+
+  .fb-app-body.with-left,
+  .fb-app-body.with-left.with-right {
+    display: block;
+  }
+
+  .fb-left-rail {
+    position: fixed;
+    z-index: 900;
+    top: var(--top-nav-height);
+    left: 0;
+    width: min(310px, 88vw);
+    transform: translateX(-105%);
+    transition: transform .2s ease;
+    box-shadow: 10px 0 30px rgba(0, 0, 0, .18);
+  }
+
+  .fb-left-rail.open {
+    transform: translateX(0);
+  }
+
+  .fb-route-view {
+    padding-inline: 12px;
+  }
+
+  .fb-app-body.chat-route .fb-route-view {
+    padding: 8px;
+  }
+}
+
+@media (max-width: 760px) {
+  :root {
+    --top-nav-height: 52px;
+  }
+
+  body {
+    padding-bottom: 64px;
+  }
+
+  .fb-top-nav {
+    height: var(--top-nav-height);
+    padding: 0 8px;
+  }
+
+  .fb-logo {
+    width: 38px;
+    height: 38px;
+  }
+
+  .fb-global-search {
+    width: 42px;
+    height: 40px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .fb-global-search input {
+    display: none;
+  }
+
+  .fb-top-actions {
+    gap: 5px;
+  }
+
+  .fb-circle-action,
+  .fb-avatar-button,
+  .fb-mobile-menu {
+    width: 38px;
+    height: 38px;
+  }
+
+  .fb-mobile-bottom-nav {
+    position: fixed;
+    z-index: 1100;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    height: calc(62px + env(safe-area-inset-bottom));
+    padding: 5px 4px env(safe-area-inset-bottom);
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    border-top: 1px solid var(--fb-line);
+    background: #fff;
+    box-shadow: 0 -1px 5px rgba(0, 0, 0, .08);
+  }
+
+  .fb-mobile-bottom-nav a {
+    position: relative;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 2px;
+    border-radius: 7px;
+    color: var(--fb-muted);
+    font-size: 10px;
+  }
+
+  .fb-mobile-bottom-nav a.active {
+    color: var(--fb-blue);
+  }
+
+  .fb-mobile-bottom-nav i {
+    position: absolute;
+    top: 1px;
+    right: calc(50% - 22px);
+    min-width: 17px;
+    height: 17px;
+    padding: 0 4px;
+    display: grid;
+    place-items: center;
+    border-radius: 999px;
+    background: var(--fb-red);
+    color: #fff;
+    font-size: 9px;
+    font-style: normal;
+  }
+
+  .fb-route-view {
+    padding: 12px 8px 20px;
+  }
+
+  .fb-meeting-quickjoin {
+    margin: 10px 8px 0;
+    display: grid;
+  }
+
+  .fb-meeting-code-form {
+    width: 100%;
+  }
+
+  .fb-meeting-code-form input {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .timeline-tabs {
+    display: flex !important;
+    overflow-x: auto;
+  }
+
+  .timeline-tabs button {
+    min-width: 108px !important;
+  }
+
+  .create-actions {
+    display: grid !important;
+    gap: 8px !important;
+  }
+
+  .create-actions > div {
+    justify-content: space-between !important;
+  }
+
+  .create-actions button {
+    padding-inline: 6px !important;
+  }
+
+  .chat-layout {
+    min-height: calc(100svh - var(--top-nav-height) - 78px) !important;
+    border-radius: 0 !important;
+  }
+
+  .fb-app-body.chat-route .fb-route-view {
+    height: calc(100svh - var(--top-nav-height) - 62px - env(safe-area-inset-bottom));
+    padding: 0;
+  }
+
+  .message-scroll {
+    padding: 16px 10px !important;
+  }
+
+  .bubble-wrap {
+    max-width: 82% !important;
+  }
+
+  .head-actions button:nth-child(4) {
+    display: none;
+  }
+
+  .meetings-hero,
+  .fb-meeting-quickjoin {
+    border-radius: 10px !important;
+  }
+
+  .fb-quick-chat {
+    right: 6px;
+    bottom: calc(62px + env(safe-area-inset-bottom));
+    width: calc(100vw - 12px);
+  }
+
+  .meeting-room-mode {
+    padding-bottom: 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .fb-top-left {
+    gap: 4px;
+  }
+
+  .fb-top-actions .fb-circle-action:first-child {
+    display: none;
+  }
+
+  .fb-notification-popover,
+  .fb-profile-menu {
+    position: fixed;
+    top: calc(var(--top-nav-height) + 4px);
+    right: 6px;
+    left: 6px;
+    width: auto;
+  }
+
+  .nexora-auth-card,
+  .nx-auth-card,
+  .nx-auth-v2__card,
+  .auth-card {
+    padding: 14px !important;
+  }
+
+  .nexora-auth-hero h2,
+  .nx-auth-hero h1,
+  .nx-hero h1,
+  .auth-copy h1 {
+    font-size: 34px !important;
+    letter-spacing: -2px !important;
+  }
+
+  .create-post,
+  .stories-card,
+  .post-card {
+    border-radius: 8px !important;
+  }
+
+  .create-actions button span,
+  .timeline-tab-icon + span small {
+    display: none !important;
+  }
+
+  .meeting-hero-actions {
+    display: grid !important;
+    width: 100%;
+  }
+}
+
+/* =========================================================
+   WEB UI SYNC FIX - light comments, header social tabs,
+   wide groups/livestream, inline quick chat, mobile polish
+========================================================= */
+
+.fb-top-tabs-social {
+  max-width: min(920px, 100%);
+  gap: 6px;
+}
+
+.fb-top-tabs-social a {
+  min-width: 0;
+  padding: 8px 14px !important;
+  border-radius: 12px !important;
+}
+
+.fb-top-tabs-social a span {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+  line-height: 1.12;
+}
+
+.fb-top-tabs-social a span strong {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--fb-text);
+}
+
+.fb-top-tabs-social a span small {
+  display: block;
+  font-size: 11px;
+  color: var(--fb-muted);
+}
+
+.fb-top-tabs-social a.active {
+  background: var(--fb-soft-blue) !important;
+  color: var(--fb-blue) !important;
+}
+
+.fb-top-tabs-social a.active span strong,
+.fb-top-tabs-social a.active span small {
+  color: var(--fb-blue) !important;
+}
+
+/* Hide duplicated in-page tab bar because these tabs are moved to header */
+.timeline-shell .timeline-tabbar-wrap,
+.timeline-page .timeline-tabbar-wrap,
+.timeline-shell .timeline-tabs,
+.timeline-page .timeline-tabs {
+  display: none !important;
+}
+
+/* Force light comments */
+.post-card .comments-thread,
+.post-card .comment-thread,
+.post-card .comment-list,
+.post-card .post-comments,
+.post-card .comments-panel,
+.post-card .comment-panel,
+.post-card .comment-area,
+.post-card .comment-section,
+.post-card .comment-section-inner,
+.video-journal-layout .comments-thread,
+.video-journal-layout .comment-list,
+.video-journal-layout .comment-panel,
+.video-journal-layout .comment-area,
+.video-journal-layout .comment-section,
+[class*='comment-thread'],
+[class*='comment-list'],
+[class*='comment-panel'],
+[class*='comment-section'] {
+  background: #ffffff !important;
+  color: var(--fb-text) !important;
+}
+
+.comment-item,
+.comment-item > div,
+.comment-row,
+.comment-card,
+.comment-bubble,
+.reply-bubble,
+.reply-item > div,
+.reply-item,
+.comment-box,
+.comment-compose,
+.comment-composer,
+.comment-input,
+.comment-footer,
+.video-journal-layout .comment-bubble,
+.video-journal-layout .comment-item > div {
+  background: #fff !important;
+  color: var(--fb-text) !important;
+}
+
+.comment-item h4,
+.comment-item strong,
+.comment-bubble strong,
+.comment-bubble h4,
+.comment-item p,
+.comment-bubble p,
+.comment-item small,
+.comment-bubble small,
+.comment-item span,
+.comment-bubble span,
+.reply-item p,
+.reply-item span,
+.reply-item small {
+  color: var(--fb-text) !important;
+  opacity: 1 !important;
+}
+
+.comment-box input,
+.comment-composer input,
+.comment-composer textarea,
+.comment-compose input,
+.comment-compose textarea,
+.comment-input input,
+.comment-input textarea,
+.video-journal-layout .comment-composer input,
+.video-journal-layout .comment-composer textarea {
+  border: 1px solid var(--fb-line) !important;
+  border-radius: 999px !important;
+  background: #f0f2f5 !important;
+  color: var(--fb-text) !important;
+}
+
+.comment-actions button,
+.comment-send-btn,
+.comment-icon-btn,
+.comment-tools button {
+  color: var(--fb-muted) !important;
+  background: transparent !important;
+}
+
+/* Video full display similar TikTok full-fit */
+.video-journal-layout .video-card,
+.video-journal-layout .post-card,
+.video-journal-layout .video-stage,
+.video-journal-layout .post-media,
+.post-card .post-media,
+.post-card .video-player-wrap,
+.post-card .media-frame {
+  background: #000 !important;
+  overflow: hidden !important;
+}
+
+.video-journal-layout video,
+.video-journal-layout .post-card video,
+.post-card video,
+.post-media video,
+.video-stage video,
+.media-frame video {
+  display: block !important;
+  width: 100% !important;
+  height: auto !important;
+  max-height: min(82svh, 920px) !important;
+  object-fit: contain !important;
+  margin: 0 auto !important;
+  background: #000 !important;
+}
+
+/* Full width for groups and livestream pages */
+.timeline-wide-body.with-left,
+.timeline-wide-body.with-left.with-right {
+  grid-template-columns: 280px minmax(0, 1fr) !important;
+}
+
+.timeline-wide-shell .fb-main-route,
+.timeline-wide-shell .fb-route-view,
+.timeline-wide-shell .timeline-route-view,
+.timeline-full-route,
+.timeline-full-route .timeline-page,
+.timeline-full-route .community-groups-page,
+.timeline-full-route .live-panel,
+.timeline-full-route .video-journal-layout {
+  max-width: 100% !important;
+  width: 100% !important;
+}
+
+.timeline-wide-shell .timeline-page,
+.timeline-wide-shell .community-groups-page,
+.timeline-wide-shell .live-panel,
+.timeline-wide-shell .video-journal-layout {
+  max-width: 100% !important;
+  margin: 0 !important;
+}
+
+.timeline-wide-shell .timeline-side,
+.timeline-wide-shell .feed-side,
+.timeline-wide-shell .right-aside {
+  display: none !important;
+}
+
+/* Inline quick chat outside Messenger page */
+.fb-quick-chat-rich {
+  width: 380px;
+  max-width: calc(100vw - 24px);
+}
+
+.fb-quick-chat-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 260px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 14px 14px 8px;
+  background: #fff;
+}
+
+.fb-quick-msg {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.fb-quick-msg.mine {
+  justify-content: flex-end;
+}
+
+.fb-quick-msg.mine .fb-quick-bubble {
+  background: var(--fb-blue);
+  color: #fff;
+  border-radius: 18px 18px 4px 18px;
+}
+
+.fb-quick-msg.other .fb-quick-bubble {
+  background: #f0f2f5;
+  color: var(--fb-text);
+  border-radius: 18px 18px 18px 4px;
+}
+
+.fb-quick-bubble-wrap {
+  max-width: 76%;
+}
+
+.fb-quick-bubble {
+  padding: 10px 12px;
+  font-size: 14px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.fb-quick-chat-composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  gap: 10px;
+  padding: 12px;
+  border-top: 1px solid var(--fb-line);
+  background: #fff;
+}
+
+.fb-quick-chat-composer input {
+  min-height: 42px;
+  padding: 10px 14px;
+  border: 1px solid var(--fb-line) !important;
+  border-radius: 999px !important;
+  background: #f0f2f5 !important;
+}
+
+.fb-quick-chat-composer button {
+  border: 0;
+  border-radius: 50%;
+  background: var(--fb-blue);
+  color: #fff;
+}
+
+.fb-quick-chat-composer button:disabled {
+  opacity: .55;
+}
+
+/* Better mobile alignment */
+@media (max-width: 1280px) {
+  .fb-top-tabs-social a span small {
+    display: none;
+  }
+}
+
+@media (max-width: 1024px) {
+  .fb-top-nav {
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    grid-template-areas:
+      'brand actions'
+      'tabs tabs' !important;
+    row-gap: 8px;
+    height: auto !important;
+    min-height: var(--top-nav-height);
+    padding-bottom: 10px !important;
+  }
+
+  .fb-top-left { grid-area: brand; }
+  .fb-top-actions { grid-area: actions; }
+  .fb-top-tabs { grid-area: tabs; }
+
+  .fb-top-tabs-social {
+    width: 100%;
+    overflow-x: auto;
+    justify-content: flex-start !important;
+    padding-bottom: 4px;
+  }
+
+  .fb-top-tabs-social a {
+    min-width: 150px;
+  }
+
+  .fb-app-body,
+  .fb-app-body.with-left,
+  .fb-app-body.with-left.with-right,
+  .timeline-wide-body.with-left,
+  .timeline-wide-body.with-left.with-right {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .fb-left-rail,
+  .fb-right-rail {
+    display: none !important;
+  }
+}
+
+@media (max-width: 767px) {
+  .fb-top-left {
+    gap: 8px;
+  }
+
+  .fb-global-search {
+    min-width: 0 !important;
+    width: 100%;
+  }
+
+  .fb-global-search input {
+    min-width: 0 !important;
+  }
+
+  .fb-top-tabs-social a {
+    min-width: 136px;
+    padding: 8px 10px !important;
+  }
+
+  .fb-top-tabs-social a span strong {
+    font-size: 14px;
+  }
+
+  .timeline-page,
+  .timeline-main,
+  .timeline-route-view {
+    max-width: 100% !important;
+  }
+
+  .fb-quick-chat-rich {
+    right: 12px;
+    left: 12px;
+    bottom: 78px;
+    width: auto;
+    max-width: none;
+  }
+
+  .fb-quick-chat-thread {
+    max-height: 44svh;
+  }
+
+  .fb-quick-bubble-wrap {
+    max-width: 84%;
+  }
+
+  .video-journal-layout video,
+  .video-journal-layout .post-card video,
+  .post-card video,
+  .post-media video,
+  .video-stage video,
+  .media-frame video {
+    max-height: 62svh !important;
+  }
+}
+
+/* =========================================================
+   FINAL POLISH PATCH 2026-07
+========================================================= */
+
+html {
+  scroll-behavior: smooth;
+  overflow-y: scroll;
+}
+
+body,
+.fb-shell,
+.fb-app-body,
+.fb-main-route,
+.fb-route-view,
+.timeline-shell,
+.timeline-scroll-area {
+  overscroll-behavior-y: auto !important;
+  touch-action: pan-y !important;
+}
+
+/* One document scrollbar: wheel works in the center and beside the feed. */
+.timeline-scroll-area,
+.timeline-route-view .timeline-scroll-area {
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+.fb-main-route,
+.fb-route-view,
+.timeline-route-view {
+  overflow: visible !important;
+}
+
+@media (min-width: 1025px) {
+  .fb-left-rail,
+  .fb-right-rail {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    align-self: start;
+  }
+}
+
+/* Header social tabs stay usable and have one active tab only. */
+.fb-top-tabs-social a::after {
+  display: none !important;
+}
+
+.fb-top-tabs-social a.active {
+  box-shadow: inset 0 -3px 0 var(--fb-blue);
+}
+
+/* Group cover title readability. */
+.community-hero .community-info h2,
+.community-hero .community-info > div > h2 {
+  color: #ffffff !important;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, .78) !important;
+}
+
+.community-hero .community-info p,
+.community-hero .community-info span {
+  color: #e8eefb !important;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, .8) !important;
+}
+
+.community-cover {
+  position: relative;
+}
+
+.community-cover::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(8, 15, 31, .08) 20%, rgba(8, 15, 31, .86) 100%);
+}
+
+/* Comments: no gray veil, high contrast, compact show-more action. */
+.comments-section,
+.comment-thread-list,
+.comment-node,
+.comment-node-main,
+.comment-replies,
+.comment-composer,
+.comment-composer-row {
+  background: #fff !important;
+  color: #050505 !important;
+  opacity: 1 !important;
+}
+
+.comments-section {
+  border-radius: 0 0 12px 12px;
+  padding: 0 16px 14px !important;
+}
+
+.comments-show-more {
+  width: auto !important;
+  min-height: 0 !important;
+  margin: 4px 0 10px !important;
+  padding: 5px 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: #1877f2 !important;
+  font-size: 14px !important;
+  font-weight: 750 !important;
+  text-align: left !important;
+  box-shadow: none !important;
+}
+
+.comment-bubble-rich {
+  display: inline-flex !important;
+  max-width: min(720px, 100%) !important;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 9px 12px !important;
+  border: 1px solid #e4e6eb !important;
+  border-radius: 16px !important;
+  background: #f0f2f5 !important;
+  color: #050505 !important;
+  box-shadow: none !important;
+  opacity: 1 !important;
+}
+
+.comment-bubble-rich p,
+.comment-bubble-rich span,
+.comment-bubble-rich b,
+.comment-node-main p,
+.comment-node-main span,
+.comment-node-main time {
+  color: #050505 !important;
+  opacity: 1 !important;
+  filter: none !important;
+  text-shadow: none !important;
+}
+
+.comment-meta-row time {
+  color: #65676b !important;
+}
+
+.comment-meta-row button,
+.comment-reply-target,
+.comment-reply-target b {
+  color: #1877f2 !important;
+}
+
+.comment-avatar-link,
+.comment-user-link {
+  border: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  color: #050505 !important;
+  cursor: pointer;
+  box-shadow: none !important;
+}
+
+.comment-avatar-link:disabled,
+.comment-user-link:disabled {
+  cursor: default;
+}
+
+.comment-user-link {
+  margin-bottom: 2px;
+  font-size: 13px;
+  font-weight: 800;
+  text-align: left;
+}
+
+.comment-user-link:not(:disabled):hover {
+  text-decoration: underline;
+}
+
+.comment-composer textarea {
+  color: #050505 !important;
+  background: #f0f2f5 !important;
+  caret-color: #1877f2 !important;
+}
+
+/* Post 3-dot menu pinned to the far-right edge of every post header. */
+.post-card > header {
+  position: relative !important;
+  padding-right: 58px !important;
+}
+
+.post-card > header > .post-more-wrap {
+  position: absolute !important;
+  z-index: 20;
+  top: 10px !important;
+  right: 12px !important;
+  width: 40px !important;
+  height: 40px !important;
+  flex: 0 0 40px !important;
+  margin: 0 !important;
+}
+
+.post-card > header > .post-more-wrap > button {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 50% !important;
+}
+
+.post-card > header > .post-more-wrap > button:hover {
+  background: #f0f2f5 !important;
+}
+
+.post-more-menu {
+  right: 0 !important;
+  top: 42px !important;
+  background: #fff !important;
+  border-color: #e4e6eb !important;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .18) !important;
+}
+
+.post-more-menu button {
+  color: #050505 !important;
+}
+
+.post-more-menu button:hover {
+  background: #f0f2f5 !important;
+}
+
+.post-more-menu .danger {
+  color: #e41e3f !important;
+}
+
+/* TikTok-style video: centered 9:16 stage, author lower-left, actions lower-right. */
+.video-journal-layout {
+  max-width: 760px !important;
+}
+
+.short-video-feed {
+  overflow-x: hidden !important;
+}
+
+.short-video-card {
+  min-height: min(860px, calc(100svh - 150px)) !important;
+  background: #000 !important;
+}
+
+.short-video-stage {
+  width: min(100%, 520px) !important;
+  height: min(820px, calc(100svh - 180px)) !important;
+  min-height: 620px !important;
+  margin: 0 auto !important;
+  background: #000 !important;
+}
+
+.short-video-stage > video,
+.short-video-stage > iframe,
+.short-video-stage .embedded-video,
+.short-video-stage .embedded-video iframe,
+.short-video-stage .embedded-video video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain !important;
+  background: #000 !important;
+}
+
+.short-video-copy {
+  left: 16px !important;
+  right: 88px !important;
+  bottom: 18px !important;
+  color: #fff !important;
+  text-shadow: 0 2px 8px #000 !important;
+}
+
+.short-video-copy b,
+.short-video-copy p,
+.short-video-copy span {
+  color: #fff !important;
+}
+
+.short-video-actions {
+  right: 14px !important;
+  bottom: 22px !important;
+  gap: 17px !important;
+}
+
+.short-video-actions button {
+  width: 54px;
+  min-height: 54px;
+  color: #fff !important;
+}
+
+.short-video-actions svg {
+  width: 34px !important;
+  height: 34px !important;
+}
+
+/* Story 24h cards closer to Facebook; one viewer counts once in backend. */
+.stories-card {
+  padding: 14px !important;
+}
+
+.stories-create {
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e4e6eb;
+}
+
+.stories-strip {
+  gap: 10px !important;
+  padding: 14px 1px 3px !important;
+  scrollbar-width: thin;
+}
+
+.story-chip {
+  position: relative;
+  min-width: 112px !important;
+  width: 112px !important;
+  height: 190px !important;
+  display: block !important;
+  overflow: hidden;
+  border-radius: 14px !important;
+  background: #dfe3e8 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .18);
+}
+
+.story-thumb {
+  width: 100% !important;
+  height: 100% !important;
+  padding: 0 !important;
+  border-radius: 14px !important;
+  background: #dfe3e8 !important;
+}
+
+.story-thumb img,
+.story-thumb video,
+.story-thumb .avatar {
+  width: 100% !important;
+  height: 100% !important;
+  border-radius: 14px !important;
+  object-fit: cover !important;
+}
+
+.story-chip::after {
+  content: "";
+  position: absolute;
+  inset: 48% 0 0;
+  pointer-events: none;
+  background: linear-gradient(transparent, rgba(0, 0, 0, .86));
+}
+
+.story-chip > span {
+  position: absolute;
+  z-index: 2;
+  right: 9px;
+  bottom: 9px;
+  left: 9px;
+  max-width: none !important;
+  color: #fff !important;
+  font-size: 12px !important;
+  font-weight: 800;
+  text-align: left;
+  text-shadow: 0 1px 4px #000;
+}
+
+.story-viewer-card {
+  background: #111827 !important;
+}
+
+.story-insights {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.story-insights span {
+  padding: 6px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .1);
+  color: #e5e7eb;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* Livestream stays on its real panel and uses the full available width. */
+.timeline-full-route .live-panel,
+.timeline-wide-shell .live-panel {
+  width: 100% !important;
+  max-width: none !important;
+}
+
+.nexora-live-comments,
+.live-panel aside {
+  color: #050505 !important;
+}
+
+/* Mobile drawer and search are fully functional. */
+.fb-mobile-menu-backdrop {
+  display: none;
+}
+
+.fb-search-close {
+  display: grid;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #e4e6eb;
+  color: #050505;
+}
+
+@media (max-width: 1024px) {
+  :root {
+    --top-nav-height: 116px;
+  }
+
+  .fb-top-nav {
+    min-height: var(--top-nav-height) !important;
+    max-height: var(--top-nav-height) !important;
+  }
+
+  .fb-top-tabs-social {
+    display: flex !important;
+  }
+
+  .fb-left-rail {
+    display: block !important;
+    top: var(--top-nav-height) !important;
+    height: calc(100svh - var(--top-nav-height)) !important;
+    overflow-y: auto !important;
+    background: #f0f2f5 !important;
+  }
+
+  .fb-left-rail:not(.open) {
+    pointer-events: none;
+  }
+
+  .fb-left-rail.open {
+    display: block !important;
+    pointer-events: auto;
+    transform: translateX(0) !important;
+  }
+
+  .fb-mobile-menu-backdrop {
+    position: fixed;
+    z-index: 850;
+    inset: var(--top-nav-height) 0 0;
+    display: block;
+    padding: 0;
+    border: 0;
+    background: rgba(0, 0, 0, .38);
+  }
+
+  .community-layout,
+  .live-panel,
+  .video-journal-layout {
+    min-width: 0 !important;
+    width: 100% !important;
+  }
+}
+
+@media (max-width: 767px) {
+  :root {
+    --top-nav-height: 112px;
+  }
+
+  .fb-top-nav {
+    padding: 7px 8px 8px !important;
+  }
+
+  .fb-global-search {
+    width: 42px !important;
+    min-width: 42px !important;
+    cursor: text;
+  }
+
+  .fb-global-search input {
+    display: none !important;
+  }
+
+  .fb-global-search.expanded {
+    position: absolute;
+    z-index: 8;
+    top: 6px;
+    right: 8px;
+    left: 50px;
+    width: auto !important;
+    min-width: 0 !important;
+    padding: 0 8px 0 12px !important;
+    background: #f0f2f5 !important;
+  }
+
+  .fb-global-search.expanded input {
+    display: block !important;
+  }
+
+  .mobile-search-open .fb-top-actions {
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  .fb-top-tabs-social a {
+    min-width: 132px !important;
+  }
+
+  .fb-route-view {
+    padding: 10px 8px 92px !important;
+  }
+
+  .community-layout {
+    display: block !important;
+  }
+
+  .community-sidebar {
+    position: static !important;
+    width: 100% !important;
+    max-height: none !important;
+    margin-bottom: 12px;
+  }
+
+  .community-info {
+    grid-template-columns: 1fr !important;
+    align-items: start !important;
+  }
+
+  .community-info > .avatar {
+    margin-top: -36px;
+  }
+
+  .community-actions {
+    width: 100%;
+    grid-column: 1 / -1;
+  }
+
+  .community-actions button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .short-video-card {
+    min-height: calc(100svh - 200px) !important;
+  }
+
+  .short-video-stage {
+    width: 100% !important;
+    height: calc(100svh - 230px) !important;
+    min-height: 460px !important;
+  }
+
+  .short-video-copy {
+    left: 12px !important;
+    right: 76px !important;
+    bottom: 14px !important;
+  }
+
+  .short-video-actions {
+    right: 8px !important;
+    bottom: 14px !important;
+  }
+
+  .short-video-actions button {
+    width: 48px;
+    min-height: 48px;
+  }
+
+  .story-chip {
+    min-width: 104px !important;
+    width: 104px !important;
+    height: 178px !important;
+  }
+
+  .comments-section {
+    padding-inline: 10px !important;
+  }
+
+  .comment-bubble-rich {
+    max-width: 100% !important;
+  }
+
+  .post-card > header {
+    padding-right: 54px !important;
+  }
+
+  .live-panel {
+    display: block !important;
+    padding: 0 !important;
+  }
+
+  .live-panel > * {
+    width: 100% !important;
+    margin-bottom: 12px;
+  }
+
+  .nexora-live-comments {
+    height: auto !important;
+    min-height: 420px !important;
+  }
+}

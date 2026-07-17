@@ -1,0 +1,326 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { api, errorMessage } from '../services/api';
+import { useAuth } from '../context/AuthContext';
+
+const scriptPromises = new Map();
+const ACTIVE_MEETING_KEY = 'nexoraActiveMeetingId';
+
+function cleanDomain(domain) {
+  return String(domain || import.meta.env.VITE_JITSI_DOMAIN || 'meet.jit.si')
+    .replace(/^https?:\/\//, '')
+    .replace(/\/$/, '');
+}
+
+function announceActive(meetingId) {
+  if (!meetingId) return;
+  sessionStorage.setItem(ACTIVE_MEETING_KEY, String(meetingId));
+  window.dispatchEvent(new CustomEvent('nexora:meeting-active', { detail: { meetingId: String(meetingId) } }));
+}
+
+function announceClosed(meetingId) {
+  if (String(sessionStorage.getItem(ACTIVE_MEETING_KEY) || '') === String(meetingId)) sessionStorage.removeItem(ACTIVE_MEETING_KEY);
+  window.dispatchEvent(new CustomEvent('nexora:meeting-closed', { detail: { meetingId: String(meetingId) } }));
+}
+
+function loadJitsiScript(domain) {
+  const host = cleanDomain(domain);
+  if (window.JitsiMeetExternalAPI) return Promise.resolve();
+  if (scriptPromises.has(host)) return scriptPromises.get(host);
+  const promise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = `https://${host}/external_api.js`;
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('Không tải được Jitsi SDK. Kiểm tra internet, domain Jitsi hoặc HTTPS.'));
+    document.head.appendChild(script);
+  });
+  scriptPromises.set(host, promise);
+  return promise;
+}
+
+function allowCapture(container) {
+  const iframe = container?.querySelector?.('iframe');
+  if (!iframe) return;
+  iframe.setAttribute('allow', [
+    'camera',
+    'microphone',
+    'display-capture',
+    'fullscreen',
+    'clipboard-read',
+    'clipboard-write',
+    'autoplay'
+  ].join('; '));
+  iframe.setAttribute('allowfullscreen', 'true');
+  iframe.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+}
+
+export default function JitsiMeetFrame({ meetingId, onEnded, onMinimize, onExpand, onClosed, compact = false }) {
+  const { user } = useAuth();
+  const containerRef = useRef(null);
+  const apiRef = useRef(null);
+  const endedRef = useRef(false);
+  const onEndedRef = useRef(onEnded);
+  const joinedRef = useRef(false);
+  const [status, setStatus] = useState('Đang tải phòng họp…');
+  const [meeting, setMeeting] = useState(null);
+  const [jitsiMeta, setJitsiMeta] = useState(null);
+  const [closed, setClosed] = useState(false);
+
+  useEffect(() => { onEndedRef.current = onEnded; }, [onEnded]);
+
+  const me = useMemo(() => {
+    const myId = String(user?._id || '');
+    return meeting?.participants?.find((item) => String(item.user?._id || item.user) === myId);
+  }, [meeting, user?._id]);
+  const isHost = String(me?.role) === 'host' || String(meeting?.createdBy?._id || meeting?.createdBy) === String(user?._id);
+
+  const dispose = () => {
+    try { apiRef.current?.dispose?.(); } catch { }
+    apiRef.current = null;
+    if (containerRef.current) containerRef.current.innerHTML = '';
+  };
+
+  const closeLocalFrame = async ({ endForAll = false } = {}) => {
+    if (endedRef.current) return;
+    endedRef.current = true;
+    setStatus(endForAll ? 'Đang kết thúc phòng họp…' : 'Đang thoát phòng họp…');
+    try {
+      if (endForAll && isHost) await api.post(`/meetings/${meetingId}/end`);
+      else await api.post(`/meetings/${meetingId}/leave`);
+    } catch (error) {
+      console.warn('meeting close warning:', error);
+    }
+    try { apiRef.current?.executeCommand?.('hangup'); } catch { }
+    setTimeout(() => {
+      dispose();
+      announceClosed(meetingId);
+      setClosed(true);
+      setStatus(endForAll && isHost ? 'Đã kết thúc phòng họp.' : 'Đã thoát phòng họp.');
+      onEndedRef.current?.();
+      onClosed?.();
+    }, 250);
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    endedRef.current = false;
+    joinedRef.current = false;
+    setClosed(false);
+    setStatus('Đang tải phòng họp…');
+    announceActive(meetingId);
+
+    const start = async () => {
+      try {
+        const { data } = await api.get(`/meetings/${meetingId}`);
+        if (cancelled) return;
+        setMeeting(data.meeting);
+        const jitsi = data.jitsi || {};
+        console.log('MEETING DATA:', data);
+        console.log('JITSI DATA:', jitsi);
+        console.log('JITSI CONFIG:', jitsi.configOverwrite);
+        console.log('toolbarButtons:', jitsi.configOverwrite?.toolbarButtons);
+        console.log('interfaceConfigOverwrite:', jitsi.interfaceConfigOverwrite);
+        if (Array.isArray(jitsi.configOverwrite?.toolbarButtons)) {
+          if (!jitsi.configOverwrite.toolbarButtons.includes('overflowmenu')) {
+            console.warn('Thiếu overflowmenu nên Jitsi không hiện nút 3 chấm');
+          }
+        }
+        setJitsiMeta(jitsi);
+        const domain = cleanDomain(jitsi.domain);
+        await loadJitsiScript(domain);
+        if (cancelled || !containerRef.current) return;
+        containerRef.current.innerHTML = '';
+
+        const lang = jitsi.lang || import.meta.env.VITE_JITSI_LANGUAGE || 'vi';
+        const externalApi = new window.JitsiMeetExternalAPI(domain, {
+          roomName: jitsi.roomName || data.meeting.roomName,
+          parentNode: containerRef.current,
+          width: '100%',
+          height: '100%',
+          jwt: jitsi.jwt || undefined,
+          lang,
+          userInfo: {
+            displayName: user?.displayName || 'Nexora User',
+            email: user?.email || undefined
+          },
+          configOverwrite: {
+            ...(jitsi.configOverwrite || {}),
+
+            defaultLanguage: lang,
+            language: lang,
+
+            disableDeepLinking: true,
+            disableInviteFunctions: true,
+            prejoinPageEnabled: false,
+
+            prejoinConfig: {
+              enabled: false,
+              ...(jitsi.configOverwrite?.prejoinConfig || {})
+            },
+
+            notifications: [],
+            enableLayerSuspension: false,
+
+            desktopSharingFrameRate: {
+              min: 5,
+              max: 15,
+              ...(jitsi.configOverwrite?.desktopSharingFrameRate || {})
+            },
+
+            // QUAN TRỌNG: để SAU spread, không là backend ghi đè mất
+            toolbarButtons: [
+              'microphone',
+              'camera',
+              'desktop',
+              'chat',
+              'participants-pane',
+              'raisehand',
+              'tileview',
+
+              // Các mục mày đang thiếu
+              'videoquality',
+              'fullscreen',
+              'polls',
+              'recording',
+              'shareaudio',
+
+              // Các mục quản lý / nâng cao
+              'security',
+              'mute-everyone',
+              'mute-video-everyone',
+              'select-background',
+              'stats',
+              'settings',
+              'shortcuts',
+              'sharedvideo',
+              'whiteboard',
+              'livestreaming',
+
+              // Bắt buộc để có menu 3 chấm
+              'overflowmenu',
+
+              'hangup'
+            ],
+
+            participantsPane: {
+              ...(jitsi.configOverwrite?.participantsPane || {}),
+              hideModeratorSettingsTab: false,
+              hideMoreActionsButton: false,
+              hideMuteAllButton: false
+            },
+
+            breakoutRooms: {
+              ...(jitsi.configOverwrite?.breakoutRooms || {}),
+              hideAddRoomButton: false,
+              hideAutoAssignButton: false,
+              hideJoinRoomButton: false,
+              hideModeratorSettingsTab: false,
+              hideMoreActionsButton: false,
+              hideMuteAllButton: false
+            },
+
+            securityUi: {
+              ...(jitsi.configOverwrite?.securityUi || {}),
+              hideLobbyButton: false,
+              disableLobbyPassword: false
+            },
+
+            speakerStats: {
+              ...(jitsi.configOverwrite?.speakerStats || {}),
+              disabled: false,
+              disableSearch: false
+            },
+
+            // Bật poll nếu server không chặn
+            disablePolls: false,
+
+            // Local recording nếu server hỗ trợ
+            localRecording: {
+              ...(jitsi.configOverwrite?.localRecording || {}),
+              disable: false,
+              notifyAllParticipants: true
+            },
+
+            // Cloud recording vẫn cần Jibri/JaaS/self-host
+            fileRecordingsEnabled: true,
+            liveStreamingEnabled: true
+          },
+          interfaceConfigOverwrite: {
+            ...(jitsi.interfaceConfigOverwrite || {}),
+            SHOW_JITSI_WATERMARK: false,
+            SHOW_WATERMARK_FOR_GUESTS: false,
+            SHOW_BRAND_WATERMARK: false,
+            SHOW_POWERED_BY: false,
+            MOBILE_APP_PROMO: false,
+            LANG_DETECTION: false,
+            DEFAULT_LOCAL_DISPLAY_NAME: user?.displayName || 'Nexora User'
+          }
+        });
+
+        apiRef.current = externalApi;
+        externalApi.addListener('participantRoleChanged', (event) => {
+          window.console.log('JITSI ROLE CHANGED:', event);
+        });
+
+        externalApi.addListener('videoConferenceJoined', (event) => {
+          window.console.log('JOINED JITSI:', event);
+          joinedRef.current = true;
+          announceActive(meetingId);
+          void api.post(`/meetings/${meetingId}/join`).catch(() => { });
+        });
+        setStatus('');
+        setTimeout(() => allowCapture(containerRef.current), 300);
+        setTimeout(() => allowCapture(containerRef.current), 1200);
+
+        externalApi.addListener('videoConferenceJoined', () => {
+          joinedRef.current = true;
+          announceActive(meetingId);
+          void api.post(`/meetings/${meetingId}/join`).catch(() => { });
+        });
+        externalApi.addListener('videoConferenceLeft', () => {
+          if (joinedRef.current) void api.post(`/meetings/${meetingId}/leave`).catch(() => { });
+        });
+        externalApi.addListener('readyToClose', () => {
+          if (endedRef.current) return;
+          endedRef.current = true;
+          if (joinedRef.current) void api.post(`/meetings/${meetingId}/leave`).catch(() => { });
+          dispose();
+          announceClosed(meetingId);
+          setClosed(true);
+          setStatus('Đã thoát phòng họp.');
+          onEndedRef.current?.();
+          onClosed?.();
+        });
+      } catch (error) {
+        if (!cancelled) setStatus(errorMessage(error));
+      }
+    };
+
+    void start();
+    return () => {
+      cancelled = true;
+      dispose();
+    };
+  }, [meetingId, user?.displayName, user?.email]);
+
+  return <section className={`jitsi-stage card ${compact ? 'is-compact' : ''}`}>
+    <div className="jitsi-stage-head">
+      <div className="jitsi-head-actions">
+        {compact && <button className="soft-btn tiny" onClick={onExpand}>Phóng to</button>}
+        {!compact && !closed && <button className="soft-btn tiny" onClick={() => { announceActive(meetingId); onMinimize?.(); }}>Thu nhỏ</button>}
+        {meeting?.status !== 'ended' && !closed && <button className="ghost-danger" onClick={() => closeLocalFrame({ endForAll: isHost })}>{isHost ? 'Kết thúc phòng' : 'Thoát phòng'}</button>}
+      </div>
+    </div>
+
+    {!compact && jitsiMeta?.requiresHostAuth && !jitsiMeta?.jwt && <div className="jitsi-warning">
+      <b>meet.jit.si public đang yêu cầu host đăng nhập.</b>
+      <span>Nếu gặp màn “conference has not yet started / I am the host”, hãy dùng Jitsi self-host hoặc JaaS JWT. Nexora không thể sửa chính sách máy chủ public.</span>
+    </div>}
+
+    {status && <div className="jitsi-status">{status}</div>}
+    <div className={`jitsi-container ${closed ? 'is-closed' : ''}`}>
+      <div className="jitsi-iframe-host" ref={containerRef} />
+    </div>
+    {closed && <div className="jitsi-ended-panel"><h3>Phòng họp đã đóng</h3><p>Bạn có thể quay lại danh sách hoặc mở lại phòng nếu cuộc họp chưa kết thúc.</p></div>}
+  </section>;
+}

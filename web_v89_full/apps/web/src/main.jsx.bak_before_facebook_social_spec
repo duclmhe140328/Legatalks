@@ -1,0 +1,36 @@
+// Native Android WebView bridge: nếu app bắn FCM token vào localStorage, đăng ký lên backend.
+window.NexoraNativeBridge = window.NexoraNativeBridge || {
+  async registerPushToken(token) {
+    try {
+      localStorage.setItem('nexoraNativePushToken', token);
+      const accessToken = localStorage.getItem('accessToken');
+      if (!accessToken || !token) return;
+      const { api } = await import('./services/api.js');
+      await api.post('/users/push-token', { token, platform: 'android', environment: import.meta.env.PROD ? 'production' : 'development' });
+    } catch (error) { console.warn('Native push register failed', error?.message || error); }
+  }
+};
+
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import { BrowserRouter } from 'react-router-dom';
+import { AuthProvider } from './context/AuthContext';
+import App from './App';
+import './styles.css';
+
+window.__NEXORA_BUILD__ = 'web-v8.5-native-call-mobile-sync-2026-06-26';
+console.info('[Nexora build]', window.__NEXORA_BUILD__);
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <BrowserRouter>
+      <AuthProvider>
+        <App />
+      </AuthProvider>
+    </BrowserRouter>
+  </React.StrictMode>
+);
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+}

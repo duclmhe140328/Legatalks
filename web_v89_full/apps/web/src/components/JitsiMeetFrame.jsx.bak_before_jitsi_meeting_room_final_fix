@@ -1,0 +1,150 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { api } from '../services/api';
+
+const DEFAULT_SERVER_URL = import.meta.env.VITE_JITSI_SERVER_URL || 'https://42.96.12.227';
+const scriptPromises = new Map();
+
+function cleanServerUrl(value = DEFAULT_SERVER_URL) {
+  const raw = String(value || DEFAULT_SERVER_URL).trim().replace(/\/$/, '');
+  if (!raw) return DEFAULT_SERVER_URL;
+  if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+  return `https://${raw}`;
+}
+
+function domainFromUrl(value = DEFAULT_SERVER_URL) {
+  return new URL(cleanServerUrl(value)).host;
+}
+
+function loadJitsiExternalApi(serverUrl = DEFAULT_SERVER_URL) {
+  const base = cleanServerUrl(serverUrl);
+  if (window.JitsiMeetExternalAPI) return Promise.resolve();
+  if (scriptPromises.has(base)) return scriptPromises.get(base);
+
+  const promise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = `${base}/external_api.js`;
+    script.async = true;
+    script.onload = resolve;
+    script.onerror = () => reject(new Error('Khong tai duoc Jitsi external_api.js'));
+    document.body.appendChild(script);
+  });
+  scriptPromises.set(base, promise);
+  return promise;
+}
+
+export function safeJitsiRoom(value) {
+  return String(value || '').trim().replace(/\s+/g, '-').replace(/[^a-zA-Z0-9-_]/g, '');
+}
+
+export function liveRoomName(stream) {
+  const id = stream?._id || stream?.id || stream?.streamId;
+  const existing = stream?.jitsiRoom || stream?.roomName || stream?.room || stream?.jitsi_room;
+  return safeJitsiRoom(existing || `nexora-live-${id || Date.now()}`);
+}
+
+export default function JitsiMeetFrame({
+  roomName,
+  room,
+  serverUrl = DEFAULT_SERVER_URL,
+  jwt = '',
+  purpose = 'meeting',
+  subject = 'Nexora Meeting',
+  displayName = 'Nguoi tham gia',
+  email = 'guest@nexora.local',
+  avatar = '',
+  isHost = false,
+  startWithAudioMuted,
+  startWithVideoMuted,
+  height = '100%',
+  className = '',
+  style = {},
+  configOverwrite = {},
+  interfaceConfigOverwrite = {},
+  onReady,
+  onJoined,
+  onLeft,
+}) {
+  const parentRef = useRef(null);
+  const apiRef = useRef(null);
+  const [error, setError] = useState('');
+  const cleanedRoom = useMemo(() => safeJitsiRoom(roomName || room), [roomName, room]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function mountJitsi() {
+      setError('');
+      if (!cleanedRoom) return setError('Thieu room Jitsi.');
+
+      try {
+        let effectiveServer = cleanServerUrl(serverUrl);
+        let effectiveJwt = jwt;
+
+        if (!effectiveJwt) {
+          const { data } = await api.post('/jitsi/token', {
+            room: cleanedRoom,
+            purpose,
+            moderator: isHost,
+          });
+          effectiveServer = cleanServerUrl(data.serverUrl || effectiveServer);
+          effectiveJwt = data.token;
+        }
+
+        await loadJitsiExternalApi(effectiveServer);
+        if (cancelled || !parentRef.current || !window.JitsiMeetExternalAPI) return;
+
+        apiRef.current?.dispose?.();
+        parentRef.current.innerHTML = '';
+        const instance = new window.JitsiMeetExternalAPI(domainFromUrl(effectiveServer), {
+          roomName: cleanedRoom,
+          jwt: effectiveJwt,
+          parentNode: parentRef.current,
+          width: '100%',
+          height: '100%',
+          lang: 'vi',
+          userInfo: { displayName, email, avatarURL: avatar || undefined },
+          configOverwrite: {
+            subject,
+            prejoinConfig: { enabled: false },
+            disableDeepLinking: true,
+            'deeplinking.disabled': true,
+            startWithAudioMuted: startWithAudioMuted ?? false,
+            startWithVideoMuted: startWithVideoMuted ?? false,
+            defaultLanguage: 'vi',
+            ...configOverwrite,
+          },
+          interfaceConfigOverwrite: {
+            SHOW_JITSI_WATERMARK: false,
+            SHOW_WATERMARK_FOR_GUESTS: false,
+            DISABLE_JOIN_LEAVE_NOTIFICATIONS: true,
+            MOBILE_APP_PROMO: false,
+            ...interfaceConfigOverwrite,
+          },
+        });
+
+        apiRef.current = instance;
+        instance.addListener('videoConferenceJoined', (event) => onJoined?.(event));
+        instance.addListener('videoConferenceLeft', (event) => onLeft?.(event));
+        instance.addListener('readyToClose', (event) => onLeft?.(event));
+        onReady?.(instance);
+      } catch (err) {
+        if (!cancelled) setError(err?.response?.data?.message || err?.message || 'Khong mo duoc Jitsi.');
+      }
+    }
+
+    void mountJitsi();
+    return () => {
+      cancelled = true;
+      apiRef.current?.dispose?.();
+      apiRef.current = null;
+      if (parentRef.current) parentRef.current.innerHTML = '';
+    };
+  }, [cleanedRoom, serverUrl, jwt, purpose, subject, displayName, email, avatar, isHost, startWithAudioMuted, startWithVideoMuted]);
+
+  return (
+    <div className={className} style={{ width: '100%', height, minHeight: 360, background: '#020617', borderRadius: 18, overflow: 'hidden', position: 'relative', ...style }}>
+      {error ? <div style={{ color: 'white', padding: 20, textAlign: 'center' }}><b>{error}</b><div style={{ opacity: .7, marginTop: 8 }}>Room: {cleanedRoom || '(empty)'}</div></div> : null}
+      <div ref={parentRef} style={{ width: '100%', height: '100%' }} />
+    </div>
+  );
+}

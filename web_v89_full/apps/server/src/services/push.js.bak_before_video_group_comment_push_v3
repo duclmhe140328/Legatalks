@@ -1,0 +1,118 @@
+import crypto from 'node:crypto';
+import http2 from 'node:http2';
+import { JWT } from 'google-auth-library';
+import User from '../models/User.js';
+
+const base64url = (value) => Buffer.from(value).toString('base64url');
+
+function notificationPayload(notification) {
+  return {
+    title: notification.title || 'Nexora Connect',
+    body: notification.body || '',
+    data: Object.fromEntries(Object.entries(notification.data || {}).map(([key, value]) => [key, String(value)]))
+  };
+}
+
+
+async function sendExpoPush(tokens, notification) {
+  const expoTokens = tokens.filter((token) => /^Expo(nent)?PushToken\[/i.test(String(token || '')));
+  if (!expoTokens.length) return;
+  const payload = notificationPayload(notification);
+  const chunks = [];
+  for (let i = 0; i < expoTokens.length; i += 90) chunks.push(expoTokens.slice(i, i + 90));
+  await Promise.allSettled(chunks.map((chunk) => fetch('https://exp.host/--/api/v2/push/send', {
+    method: 'POST',
+    headers: { accept: 'application/json', 'content-type': 'application/json' },
+    body: JSON.stringify(chunk.map((to) => ({
+      to,
+      sound: 'default',
+      title: payload.title,
+      body: payload.body,
+      data: payload.data,
+      priority: 'high',
+      channelId: 'default'
+    })))
+  }).then(async (response) => {
+    if (!response.ok) throw new Error(`Expo Push ${response.status}: ${await response.text()}`);
+  })));
+}
+
+async function sendFcm(tokens, notification) {
+  tokens = tokens.filter((token) => !/^Expo(nent)?PushToken\[/i.test(String(token || '')));
+  if (!tokens.length || !process.env.FCM_SERVICE_ACCOUNT_JSON) return;
+  const raw = process.env.FCM_SERVICE_ACCOUNT_JSON.trim();
+  const serviceAccount = raw.startsWith('{') ? JSON.parse(raw) : JSON.parse(Buffer.from(raw, 'base64').toString('utf8'));
+  const auth = new JWT({
+    email: serviceAccount.client_email,
+    key: serviceAccount.private_key,
+    scopes: ['https://www.googleapis.com/auth/firebase.messaging']
+  });
+  const { token } = await auth.getAccessToken();
+  const payload = notificationPayload(notification);
+  await Promise.allSettled(tokens.map((deviceToken) => fetch(
+    `https://fcm.googleapis.com/v1/projects/${serviceAccount.project_id}/messages:send`,
+    {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ message: { token: deviceToken, notification: { title: payload.title, body: payload.body }, data: payload.data } })
+    }
+  ).then(async (response) => {
+    if (!response.ok) throw new Error(`FCM ${response.status}: ${await response.text()}`);
+  })));
+}
+
+function createApnsJwt() {
+  const teamId = process.env.APNS_TEAM_ID;
+  const keyId = process.env.APNS_KEY_ID;
+  const privateKey = (process.env.APNS_PRIVATE_KEY || '').replace(/\\n/g, '\n');
+  if (!teamId || !keyId || !privateKey) return null;
+  const header = base64url(JSON.stringify({ alg: 'ES256', kid: keyId }));
+  const claims = base64url(JSON.stringify({ iss: teamId, iat: Math.floor(Date.now() / 1000) }));
+  const signingInput = `${header}.${claims}`;
+  const signature = crypto.sign('sha256', Buffer.from(signingInput), { key: privateKey, dsaEncoding: 'ieee-p1363' }).toString('base64url');
+  return `${signingInput}.${signature}`;
+}
+
+async function sendApns(tokens, notification) {
+  const topic = process.env.APNS_BUNDLE_ID;
+  const jwt = createApnsJwt();
+  if (!tokens.length || !topic || !jwt) return;
+  const production = String(process.env.APNS_PRODUCTION).toLowerCase() === 'true';
+  const origin = production ? 'https://api.push.apple.com' : 'https://api.sandbox.push.apple.com';
+  const payload = notificationPayload(notification);
+
+  await Promise.allSettled(tokens.map((deviceToken) => new Promise((resolve, reject) => {
+    const client = http2.connect(origin);
+    client.on('error', reject);
+    const req = client.request({
+      ':method': 'POST',
+      ':path': `/3/device/${deviceToken}`,
+      authorization: `bearer ${jwt}`,
+      'apns-topic': topic,
+      'apns-push-type': 'alert',
+      'apns-priority': '10',
+      'content-type': 'application/json'
+    });
+    let body = '';
+    req.setEncoding('utf8');
+    req.on('response', (headers) => {
+      const status = Number(headers[':status']);
+      req.on('data', (chunk) => { body += chunk; });
+      req.on('end', () => {
+        client.close();
+        status >= 200 && status < 300 ? resolve() : reject(new Error(`APNs ${status}: ${body}`));
+      });
+    });
+    req.on('error', (error) => { client.close(); reject(error); });
+    req.end(JSON.stringify({ aps: { alert: { title: payload.title, body: payload.body }, sound: 'default' }, ...payload.data }));
+  })));
+}
+
+export async function sendPushToUser(userId, notification) {
+  const user = await User.findById(userId).select('sessions');
+  if (!user) return;
+  const active = user.sessions.filter((session) => session.pushToken && !session.revokedAt);
+  const androidTokens = active.filter((session) => session.pushPlatform === 'android' || session.pushPlatform === 'web').map((session) => session.pushToken);
+  const iosTokens = active.filter((session) => session.pushPlatform === 'ios').map((session) => session.pushToken);
+  await Promise.all([sendExpoPush(androidTokens, notification), sendFcm(androidTokens, notification), sendApns(iosTokens, notification)]);
+}

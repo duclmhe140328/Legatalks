@@ -1,0 +1,27 @@
+node_modules
+.env
+apps/*/.env
+apps/web/dist
+apps/server/uploads/*
+!apps/server/uploads/.gitkeep
+.DS_Store
+npm-debug.log*
+
+# Environment and secret files
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# Nexora production secrets
+RENDER_ENV_VALUES.txt
+JITSI_SERVER_VALUES.env
+JWT_JITSI_FINGERPRINTS.json
+nexora-jitsi.env
+
+# Private keys
+*.pem
+*.key
+*.p12
+*.pfx

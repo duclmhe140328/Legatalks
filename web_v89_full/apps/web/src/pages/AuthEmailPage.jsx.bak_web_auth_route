@@ -1,0 +1,230 @@
+import { useState } from 'react';
+import { api } from '../services/api';
+
+function cleanError(error) {
+  return error?.response?.data?.message || error?.message || 'Co loi xay ra.';
+}
+
+const box = {
+  maxWidth: 460,
+  margin: '40px auto',
+  background: '#fff',
+  border: '1px solid #e5e7eb',
+  borderRadius: 28,
+  padding: 24,
+  boxShadow: '0 24px 70px rgba(15,23,42,.12)',
+};
+
+const input = {
+  width: '100%',
+  boxSizing: 'border-box',
+  padding: '13px 14px',
+  borderRadius: 16,
+  border: '1px solid #dbe3ef',
+  outline: 'none',
+  fontWeight: 700,
+};
+
+const btn = {
+  width: '100%',
+  padding: '13px 16px',
+  border: 0,
+  borderRadius: 16,
+  background: '#1877f2',
+  color: '#fff',
+  fontWeight: 900,
+  cursor: 'pointer',
+};
+
+export default function AuthEmailPage({ onLoggedIn }) {
+  const [mode, setMode] = useState('login');
+  const [loading, setLoading] = useState(false);
+  const [sendingOtp, setSendingOtp] = useState(false);
+  const [form, setForm] = useState({
+    phone: '84901111111',
+    email: '',
+    displayName: '',
+    password: '12345678',
+    confirmPassword: '',
+    otp: '',
+    account: '',
+    newPassword: '',
+  });
+  const [message, setMessage] = useState('');
+
+  function setField(key, value) {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function accountPayload() {
+    const raw = String(form.account || '').trim();
+    if (raw.includes('@')) return { email: raw.toLowerCase() };
+    return { phone: raw };
+  }
+
+  async function login() {
+    setLoading(true);
+    setMessage('');
+
+    try {
+      const { data } = await api.post('/auth/login/password', {
+        phone: form.phone.trim(),
+        password: form.password,
+        device: { platform: 'web', name: 'Web Browser' },
+      });
+
+      localStorage.setItem('accessToken', data.accessToken);
+      localStorage.setItem('refreshToken', data.refreshToken);
+      if (data.user) localStorage.setItem('user', JSON.stringify(data.user));
+
+      onLoggedIn?.(data);
+      window.location.reload();
+    } catch (error) {
+      setMessage(cleanError(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function requestRegisterOtp() {
+    setSendingOtp(true);
+    setMessage('');
+
+    try {
+      const { data } = await api.post('/auth/request-otp', {
+        phone: form.phone.trim(),
+        email: form.email.trim().toLowerCase(),
+        purpose: 'register',
+        channel: 'email',
+      });
+
+      if (data.devCode) setField('otp', data.devCode);
+      setMessage(data.message || 'Da gui OTP ve Gmail.');
+    } catch (error) {
+      setMessage(cleanError(error));
+    } finally {
+      setSendingOtp(false);
+    }
+  }
+
+  async function register() {
+    setLoading(true);
+    setMessage('');
+
+    try {
+      const { data } = await api.post('/auth/register', {
+        phone: form.phone.trim(),
+        email: form.email.trim().toLowerCase(),
+        displayName: form.displayName.trim(),
+        password: form.password,
+        otp: form.otp.trim(),
+        accountType: 'personal',
+        device: { platform: 'web', name: 'Web Browser' },
+      });
+
+      localStorage.setItem('accessToken', data.accessToken);
+      localStorage.setItem('refreshToken', data.refreshToken);
+      if (data.user) localStorage.setItem('user', JSON.stringify(data.user));
+
+      onLoggedIn?.(data);
+      window.location.reload();
+    } catch (error) {
+      setMessage(cleanError(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function requestResetOtp() {
+    setSendingOtp(true);
+    setMessage('');
+
+    try {
+      const { data } = await api.post('/auth/forgot-password', accountPayload());
+      if (data.devCode) setField('otp', data.devCode);
+      setMessage(data.message || 'Da gui OTP dat lai mat khau.');
+    } catch (error) {
+      setMessage(cleanError(error));
+    } finally {
+      setSendingOtp(false);
+    }
+  }
+
+  async function resetPassword() {
+    setLoading(true);
+    setMessage('');
+
+    try {
+      await api.post('/auth/reset-password', {
+        ...accountPayload(),
+        otp: form.otp.trim(),
+        newPassword: form.newPassword,
+      });
+
+      setMessage('Da doi mat khau. Hay dang nhap lai.');
+      setMode('login');
+    } catch (error) {
+      setMessage(cleanError(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div style={{ minHeight: '100vh', padding: 20, background: 'linear-gradient(135deg,#eef2ff,#fff)' }}>
+      <div style={box}>
+        <h1 style={{ margin: 0, fontSize: 30 }}>Nexora Connect</h1>
+        <p style={{ color: '#64748b', fontWeight: 700 }}>Dang ky bang Gmail OTP, quen mat khau va doi mat khau.</p>
+
+        {mode !== 'forgot' ? (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
+            <button style={{ ...btn, background: mode === 'login' ? '#1877f2' : '#e5e7eb', color: mode === 'login' ? '#fff' : '#334155' }} onClick={() => setMode('login')}>Dang nhap</button>
+            <button style={{ ...btn, background: mode === 'register' ? '#1877f2' : '#e5e7eb', color: mode === 'register' ? '#fff' : '#334155' }} onClick={() => setMode('register')}>Dang ky</button>
+          </div>
+        ) : null}
+
+        <div style={{ display: 'grid', gap: 12 }}>
+          {mode === 'login' ? (
+            <>
+              <input style={input} value={form.phone} onChange={(e) => setField('phone', e.target.value)} placeholder="So dien thoai" />
+              <input style={input} type="password" value={form.password} onChange={(e) => setField('password', e.target.value)} placeholder="Mat khau" />
+              <button style={btn} disabled={loading} onClick={login}>{loading ? 'Dang xu ly...' : 'Dang nhap'}</button>
+              <button style={{ ...btn, background: 'transparent', color: '#1877f2' }} onClick={() => setMode('forgot')}>Quen mat khau?</button>
+            </>
+          ) : null}
+
+          {mode === 'register' ? (
+            <>
+              <input style={input} value={form.displayName} onChange={(e) => setField('displayName', e.target.value)} placeholder="Ten hien thi" />
+              <input style={input} value={form.phone} onChange={(e) => setField('phone', e.target.value)} placeholder="So dien thoai" />
+              <input style={input} value={form.email} onChange={(e) => setField('email', e.target.value)} placeholder="Gmail nhan OTP" />
+              <input style={input} type="password" value={form.password} onChange={(e) => setField('password', e.target.value)} placeholder="Mat khau" />
+              <input style={input} type="password" value={form.confirmPassword} onChange={(e) => setField('confirmPassword', e.target.value)} placeholder="Nhap lai mat khau" />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: 8 }}>
+                <input style={input} value={form.otp} onChange={(e) => setField('otp', e.target.value)} placeholder="OTP Gmail" />
+                <button style={btn} disabled={sendingOtp} onClick={requestRegisterOtp}>{sendingOtp ? 'Gui...' : 'Gui OTP'}</button>
+              </div>
+              <button style={btn} disabled={loading} onClick={register}>{loading ? 'Dang tao...' : 'Tao tai khoan'}</button>
+            </>
+          ) : null}
+
+          {mode === 'forgot' ? (
+            <>
+              <input style={input} value={form.account} onChange={(e) => setField('account', e.target.value)} placeholder="Gmail hoac so dien thoai" />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: 8 }}>
+                <input style={input} value={form.otp} onChange={(e) => setField('otp', e.target.value)} placeholder="OTP" />
+                <button style={btn} disabled={sendingOtp} onClick={requestResetOtp}>{sendingOtp ? 'Gui...' : 'Gui OTP'}</button>
+              </div>
+              <input style={input} type="password" value={form.newPassword} onChange={(e) => setField('newPassword', e.target.value)} placeholder="Mat khau moi" />
+              <input style={input} type="password" value={form.confirmPassword} onChange={(e) => setField('confirmPassword', e.target.value)} placeholder="Nhap lai mat khau moi" />
+              <button style={btn} disabled={loading} onClick={resetPassword}>{loading ? 'Dang xu ly...' : 'Dat lai mat khau'}</button>
+              <button style={{ ...btn, background: 'transparent', color: '#1877f2' }} onClick={() => setMode('login')}>Quay lai dang nhap</button>
+            </>
+          ) : null}
+        </div>
+
+        {message ? <div style={{ marginTop: 14, padding: 12, borderRadius: 14, background: '#f1f5f9', color: '#0f172a', fontWeight: 800 }}>{message}</div> : null}
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,711 @@
+/* =========================================================
+   NEXORA CONNECT — FACEBOOK-LIKE GLOBAL UI
+   Loaded from /facebook-global.css so it affects every route.
+========================================================= */
+
+:root {
+  --fb-blue: #1877f2;
+  --fb-blue-hover: #166fe5;
+  --fb-bg: #f0f2f5;
+  --fb-card: #ffffff;
+  --fb-text: #050505;
+  --fb-secondary: #65676b;
+  --fb-line: #e4e6eb;
+  --fb-soft: #e7f3ff;
+  --fb-control: #e4e6eb;
+  --fb-radius: 12px;
+  --fb-shadow: 0 1px 2px rgba(0, 0, 0, .10);
+  --fb-shadow-hover: 0 2px 8px rgba(0, 0, 0, .14);
+}
+
+html.nexora-facebook-ui,
+html.nexora-facebook-ui body,
+body.nexora-facebook-ui {
+  min-height: 100%;
+  margin: 0;
+  color: var(--fb-text) !important;
+  background: var(--fb-bg) !important;
+  font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+  -webkit-font-smoothing: antialiased;
+}
+
+html.nexora-facebook-ui *,
+html.nexora-facebook-ui *::before,
+html.nexora-facebook-ui *::after {
+  box-sizing: border-box;
+}
+
+html.nexora-facebook-ui ::selection {
+  background: rgba(24, 119, 242, .20);
+}
+
+html.nexora-facebook-ui ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+html.nexora-facebook-ui ::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: #bcc0c4;
+  background-clip: padding-box;
+}
+
+html.nexora-facebook-ui ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ---------- global typography ---------- */
+
+html.nexora-facebook-ui h1,
+html.nexora-facebook-ui h2,
+html.nexora-facebook-ui h3,
+html.nexora-facebook-ui h4 {
+  color: var(--fb-text);
+  letter-spacing: -.35px;
+}
+
+html.nexora-facebook-ui p,
+html.nexora-facebook-ui small,
+html.nexora-facebook-ui .muted,
+html.nexora-facebook-ui [class*="subtitle"],
+html.nexora-facebook-ui [class*="description"] {
+  color: var(--fb-secondary);
+}
+
+/* ---------- cards and panels on every route ---------- */
+
+html.nexora-facebook-ui :where(
+  .card,
+  .panel,
+  .page-card,
+  .content-card,
+  .section-card,
+  .settings-card,
+  .meeting-card,
+  .contact-card,
+  .notification-card,
+  .integration-card,
+  .mini-app-card,
+  .post-card,
+  .composer-card,
+  [class$="-card"],
+  [class*="-card "],
+  [class*="card-"],
+  [class*="_card"],
+  [class*="panel"]
+) {
+  border: 1px solid transparent !important;
+  border-radius: var(--fb-radius) !important;
+  background: var(--fb-card) !important;
+  box-shadow: var(--fb-shadow) !important;
+}
+
+html.nexora-facebook-ui :where(
+  .meeting-card,
+  .contact-card,
+  .notification-card,
+  .integration-card,
+  .mini-app-card,
+  .post-card,
+  [class*="list-item"],
+  [class*="listItem"],
+  [class*="-item"]
+):hover {
+  box-shadow: var(--fb-shadow-hover);
+}
+
+/* ---------- forms ---------- */
+
+html.nexora-facebook-ui :where(
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  textarea,
+  select
+) {
+  min-height: 42px;
+  border: 1px solid #ccd0d5 !important;
+  border-radius: 8px !important;
+  outline: none !important;
+  background: #fff !important;
+  color: var(--fb-text) !important;
+  font: inherit;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+
+html.nexora-facebook-ui :where(
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  textarea,
+  select
+):focus {
+  border-color: var(--fb-blue) !important;
+  box-shadow: 0 0 0 2px rgba(24, 119, 242, .14) !important;
+}
+
+html.nexora-facebook-ui input::placeholder,
+html.nexora-facebook-ui textarea::placeholder {
+  color: #8a8d91 !important;
+}
+
+html.nexora-facebook-ui textarea {
+  line-height: 1.45;
+}
+
+/* ---------- buttons ---------- */
+
+html.nexora-facebook-ui button,
+html.nexora-facebook-ui .button,
+html.nexora-facebook-ui [class*="btn"],
+html.nexora-facebook-ui a[role="button"] {
+  border-radius: 8px !important;
+  font-family: inherit;
+  font-weight: 700;
+}
+
+html.nexora-facebook-ui :where(
+  .primary,
+  .btn-primary,
+  .button-primary,
+  [class*="primary-button"],
+  [class*="button-primary"],
+  [class*="btn-primary"],
+  button[type="submit"]
+) {
+  border-color: var(--fb-blue) !important;
+  background: var(--fb-blue) !important;
+  color: #fff !important;
+  box-shadow: none !important;
+}
+
+html.nexora-facebook-ui :where(
+  .primary,
+  .btn-primary,
+  .button-primary,
+  [class*="primary-button"],
+  [class*="button-primary"],
+  [class*="btn-primary"],
+  button[type="submit"]
+):hover {
+  background: var(--fb-blue-hover) !important;
+}
+
+html.nexora-facebook-ui :where(
+  .secondary,
+  .btn-secondary,
+  .button-secondary,
+  [class*="secondary-button"],
+  [class*="button-secondary"],
+  [class*="btn-secondary"]
+) {
+  border-color: transparent !important;
+  background: var(--fb-control) !important;
+  color: var(--fb-text) !important;
+  box-shadow: none !important;
+}
+
+/* ---------- modal/dialog ---------- */
+
+html.nexora-facebook-ui :where(
+  dialog,
+  .modal,
+  .dialog,
+  [class*="modal-content"],
+  [class*="dialog-content"],
+  [role="dialog"]
+) {
+  border: 0 !important;
+  border-radius: 12px !important;
+  background: #fff !important;
+  box-shadow: 0 12px 42px rgba(0, 0, 0, .28) !important;
+}
+
+html.nexora-facebook-ui :where(
+  .modal-backdrop,
+  .dialog-backdrop,
+  [class*="backdrop"],
+  [class*="overlay"]
+) {
+  background: rgba(0, 0, 0, .50) !important;
+}
+
+/* ---------- app chrome: topbar/sidebar/nav ---------- */
+
+html.nexora-facebook-ui :where(
+  .app-shell,
+  .shell,
+  [class*="app-shell"],
+  [class*="layout-shell"]
+) {
+  background: var(--fb-bg) !important;
+}
+
+html.nexora-facebook-ui :where(
+  .topbar,
+  .app-header,
+  .main-header,
+  .header-bar,
+  [class*="topbar"],
+  [class*="top-bar"],
+  [class*="app-header"],
+  [class*="main-header"]
+) {
+  border-bottom: 1px solid #dddfe2 !important;
+  background: #fff !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .10) !important;
+}
+
+html.nexora-facebook-ui :where(
+  aside,
+  .sidebar,
+  .left-sidebar,
+  .right-sidebar,
+  [class*="sidebar"]
+) {
+  border-color: var(--fb-line) !important;
+  background: var(--fb-bg) !important;
+}
+
+html.nexora-facebook-ui :where(
+  nav a,
+  nav button,
+  .nav-item,
+  [class*="nav-item"],
+  [class*="menu-item"]
+) {
+  border-radius: 8px !important;
+}
+
+html.nexora-facebook-ui :where(
+  nav a.active,
+  nav button.active,
+  .nav-item.active,
+  [aria-current="page"]
+) {
+  background: var(--fb-soft) !important;
+  color: var(--fb-blue) !important;
+}
+
+html.nexora-facebook-ui :where(
+  main,
+  .main-content,
+  .page-content,
+  [class*="main-content"],
+  [class*="page-content"]
+) {
+  background: var(--fb-bg);
+}
+
+/* =========================================================
+   AUTH — Facebook-like simple login/register
+========================================================= */
+
+html.nexora-facebook-ui :where(.nx-auth-v2, .nexora-auth, .nx-auth) {
+  min-height: 100svh !important;
+  background: var(--fb-bg) !important;
+}
+
+html.nexora-facebook-ui :where(
+  .nx-auth-v2__intro,
+  .nexora-auth-left,
+  .nx-auth-left
+) {
+  background: transparent !important;
+}
+
+html.nexora-facebook-ui :where(
+  .nx-auth-v2__logo,
+  .nexora-auth-logo,
+  .nx-auth-logo
+) {
+  border-radius: 50% !important;
+  background: var(--fb-blue) !important;
+  box-shadow: none !important;
+}
+
+html.nexora-facebook-ui :where(
+  .nx-auth-v2__hero h1,
+  .nexora-auth-hero h2,
+  .nx-auth-hero h1
+) {
+  color: var(--fb-blue) !important;
+  font-size: clamp(34px, 5vw, 58px) !important;
+  letter-spacing: -2px !important;
+}
+
+html.nexora-facebook-ui :where(
+  .nx-auth-v2__panel,
+  .nexora-auth-right,
+  .nx-auth-card-wrap
+) {
+  border: 0 !important;
+  background: transparent !important;
+  backdrop-filter: none !important;
+}
+
+html.nexora-facebook-ui :where(
+  .nx-auth-v2__card,
+  .nexora-auth-card,
+  .nx-auth-card
+) {
+  border: 0 !important;
+  border-radius: 10px !important;
+  background: #fff !important;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, .18) !important;
+}
+
+html.nexora-facebook-ui :where(
+  .nx-auth-v2__button,
+  .nexora-auth-btn,
+  .nx-auth-btn
+) {
+  border-radius: 7px !important;
+  background: var(--fb-blue) !important;
+  box-shadow: none !important;
+}
+
+html.nexora-facebook-ui :where(
+  .nx-auth-v2__button.is-secondary,
+  .nexora-auth-btn.secondary,
+  .nx-auth-btn.secondary
+) {
+  background: #e7f3ff !important;
+  color: var(--fb-blue) !important;
+}
+
+html.nexora-facebook-ui :where(
+  .nx-auth-v2__tabs,
+  .nexora-auth-tabs,
+  .nx-auth-tabs
+) {
+  border-radius: 8px !important;
+  background: #f0f2f5 !important;
+}
+
+html.nexora-facebook-ui :where(
+  .nx-auth-v2__tab.is-active,
+  .nexora-auth-tab.active,
+  .nx-auth-tab.active
+) {
+  border-radius: 6px !important;
+  background: var(--fb-blue) !important;
+  box-shadow: none !important;
+}
+
+/* =========================================================
+   CHAT
+========================================================= */
+
+body.fb-route-chats :where(
+  .chat-page,
+  .chat-layout,
+  [class*="chat-page"],
+  [class*="chat-layout"]
+) {
+  background: var(--fb-bg) !important;
+}
+
+body.fb-route-chats :where(
+  .chat-sidebar,
+  .conversation-list,
+  .conversation-panel,
+  [class*="conversation-list"],
+  [class*="chat-sidebar"]
+) {
+  border-right: 1px solid var(--fb-line) !important;
+  background: #fff !important;
+}
+
+body.fb-route-chats :where(
+  .chat-header,
+  .conversation-header,
+  [class*="chat-header"],
+  [class*="conversation-header"]
+) {
+  border-bottom: 1px solid var(--fb-line) !important;
+  background: #fff !important;
+}
+
+body.fb-route-chats :where(
+  .conversation-item,
+  [class*="conversation-item"]
+) {
+  border-radius: 8px !important;
+}
+
+body.fb-route-chats :where(
+  .conversation-item.active,
+  [class*="conversation-item"].active,
+  [aria-selected="true"]
+) {
+  background: var(--fb-soft) !important;
+}
+
+body.fb-route-chats :where(
+  .messages,
+  .message-list,
+  .messages-list,
+  [class*="message-list"],
+  [class*="messages-list"]
+) {
+  background: var(--fb-bg) !important;
+}
+
+body.fb-route-chats :where(
+  .message-bubble,
+  .bubble,
+  [class*="message-bubble"],
+  [class*="messageBubble"]
+) {
+  max-width: min(72%, 620px);
+  border-radius: 18px !important;
+  background: #e4e6eb !important;
+  color: var(--fb-text) !important;
+  box-shadow: none !important;
+}
+
+body.fb-route-chats :where(
+  .message.mine .message-bubble,
+  .message.outgoing .message-bubble,
+  .message-bubble.mine,
+  .message-bubble.outgoing,
+  [class*="message-mine"] [class*="bubble"],
+  [class*="outgoing"] [class*="bubble"]
+) {
+  background: var(--fb-blue) !important;
+  color: #fff !important;
+}
+
+body.fb-route-chats :where(
+  .composer,
+  .message-composer,
+  .chat-composer,
+  [class*="message-composer"],
+  [class*="chat-composer"]
+) {
+  border-top: 1px solid var(--fb-line) !important;
+  background: #fff !important;
+}
+
+/* =========================================================
+   TIMELINE / FEED
+========================================================= */
+
+body.fb-route-timeline :where(
+  .timeline-page,
+  .feed-page,
+  [class*="timeline"],
+  [class*="feed-page"]
+) {
+  background: var(--fb-bg) !important;
+}
+
+body.fb-route-timeline :where(
+  .post,
+  .post-card,
+  .feed-card,
+  .composer,
+  .story-card,
+  [class*="post-card"],
+  [class*="composer-card"],
+  [class*="story-card"]
+) {
+  border: 0 !important;
+  border-radius: 10px !important;
+  background: #fff !important;
+  box-shadow: var(--fb-shadow) !important;
+}
+
+body.fb-route-timeline :where(
+  .post-actions,
+  [class*="post-actions"]
+) {
+  border-top: 1px solid var(--fb-line) !important;
+  border-bottom: 1px solid var(--fb-line) !important;
+}
+
+body.fb-route-timeline :where(
+  .post-actions button,
+  [class*="post-actions"] button
+) {
+  background: transparent !important;
+  color: var(--fb-secondary) !important;
+}
+
+/* =========================================================
+   CONTACTS / CALLS / NOTIFICATIONS
+========================================================= */
+
+body.fb-route-contacts :where(
+  .contact-item,
+  .friend-item,
+  .user-row,
+  [class*="contact-item"],
+  [class*="friend-item"]
+),
+body.fb-route-calls :where(
+  .call-item,
+  .call-row,
+  [class*="call-item"],
+  [class*="call-row"]
+),
+body.fb-route-notifications :where(
+  .notification-item,
+  .notification-row,
+  [class*="notification-item"],
+  [class*="notification-row"]
+) {
+  margin-bottom: 4px;
+  border: 0 !important;
+  border-radius: 8px !important;
+  background: #fff !important;
+}
+
+body.fb-route-notifications :where(
+  .notification-item.unread,
+  [class*="notification-item"].unread,
+  [data-unread="true"]
+) {
+  background: #e7f3ff !important;
+}
+
+/* =========================================================
+   MEETINGS / MINI APPS / INTEGRATIONS
+========================================================= */
+
+body.fb-route-meetings :where(
+  .meeting-card,
+  [class*="meeting-card"],
+  [class*="meeting-item"]
+),
+body.fb-route-mini-apps :where(
+  .mini-app-card,
+  [class*="mini-app-card"],
+  [class*="app-card"]
+),
+body.fb-route-integrations :where(
+  .integration-card,
+  [class*="integration-card"],
+  [class*="provider-card"]
+) {
+  border: 0 !important;
+  border-radius: 12px !important;
+  background: #fff !important;
+  box-shadow: var(--fb-shadow) !important;
+}
+
+body.fb-route-meetings :where(
+  .meeting-card:hover,
+  [class*="meeting-card"]:hover
+),
+body.fb-route-mini-apps :where(
+  .mini-app-card:hover,
+  [class*="mini-app-card"]:hover
+),
+body.fb-route-integrations :where(
+  .integration-card:hover,
+  [class*="integration-card"]:hover
+) {
+  transform: translateY(-1px);
+  box-shadow: var(--fb-shadow-hover) !important;
+}
+
+/* =========================================================
+   PROFILE — keep the dedicated Facebook profile dominant
+========================================================= */
+
+html.nexora-facebook-ui .nx-fb-profile {
+  background: var(--fb-bg) !important;
+}
+
+/* =========================================================
+   RESPONSIVE
+========================================================= */
+
+@media (max-width: 900px) {
+  html.nexora-facebook-ui :where(
+    .page,
+    .page-container,
+    .content-container,
+    [class*="page-container"],
+    [class*="content-container"]
+  ) {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  html.nexora-facebook-ui :where(
+    .sidebar,
+    .left-sidebar,
+    .right-sidebar,
+    [class*="sidebar"]
+  ) {
+    max-width: 100%;
+  }
+
+  html.nexora-facebook-ui :where(
+    .grid,
+    .page-grid,
+    .content-grid,
+    [class*="page-grid"],
+    [class*="content-grid"]
+  ) {
+    grid-template-columns: 1fr !important;
+  }
+
+  body.fb-route-chats :where(
+    .message-bubble,
+    .bubble,
+    [class*="message-bubble"]
+  ) {
+    max-width: 86%;
+  }
+}
+
+@media (max-width: 620px) {
+  html.nexora-facebook-ui body {
+    font-size: 14px;
+  }
+
+  html.nexora-facebook-ui :where(
+    .card,
+    .panel,
+    .page-card,
+    [class$="-card"],
+    [class*="card-"]
+  ) {
+    border-radius: 8px !important;
+  }
+
+  html.nexora-facebook-ui :where(
+    .nx-auth-v2__intro,
+    .nexora-auth-left,
+    .nx-auth-left
+  ) {
+    display: none !important;
+  }
+
+  html.nexora-facebook-ui :where(
+    .nx-auth-v2__panel,
+    .nexora-auth-right,
+    .nx-auth-card-wrap
+  ) {
+    min-height: 100svh !important;
+    padding: 14px !important;
+  }
+
+  html.nexora-facebook-ui :where(
+    .nx-auth-v2__card,
+    .nexora-auth-card,
+    .nx-auth-card
+  ) {
+    width: 100% !important;
+    max-width: 430px !important;
+  }
+
+  html.nexora-facebook-ui :where(
+    button,
+    .button,
+    [class*="btn"]
+  ) {
+    min-height: 40px;
+  }
+}

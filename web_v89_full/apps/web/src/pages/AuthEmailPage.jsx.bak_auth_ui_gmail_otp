@@ -1,0 +1,320 @@
+import { useEffect, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { api } from '../services/api';
+import { useAuth } from '../context/AuthContext';
+
+function cleanError(error) {
+  return error?.response?.data?.message || error?.message || 'Có lỗi xảy ra.';
+}
+
+const box = {
+  maxWidth: 460,
+  margin: '40px auto',
+  background: '#fff',
+  border: '1px solid #e5e7eb',
+  borderRadius: 28,
+  padding: 24,
+  boxShadow: '0 24px 70px rgba(15,23,42,.12)',
+};
+
+const input = {
+  width: '100%',
+  boxSizing: 'border-box',
+  padding: '13px 14px',
+  borderRadius: 16,
+  border: '1px solid #dbe3ef',
+  outline: 'none',
+  fontWeight: 700,
+};
+
+const btn = {
+  width: '100%',
+  padding: '13px 16px',
+  border: 0,
+  borderRadius: 16,
+  background: '#1877f2',
+  color: '#fff',
+  fontWeight: 900,
+  cursor: 'pointer',
+};
+
+function modeTitle(mode) {
+  if (mode === 'register') return 'Tạo tài khoản';
+  if (mode === 'forgot') return 'Quên mật khẩu';
+  return 'Đăng nhập';
+}
+
+export default function AuthEmailPage({ initialMode = 'login' }) {
+  const navigate = useNavigate();
+  const auth = useAuth();
+  const [mode, setMode] = useState(initialMode || 'login');
+  const [loading, setLoading] = useState(false);
+  const [sendingOtp, setSendingOtp] = useState(false);
+  const [message, setMessage] = useState('');
+  const [form, setForm] = useState({
+    phone: '84901111111',
+    email: '',
+    displayName: '',
+    password: '12345678',
+    confirmPassword: '',
+    otp: '',
+    account: '',
+    newPassword: '',
+  });
+
+  useEffect(() => {
+    setMode(initialMode || 'login');
+    setMessage('');
+  }, [initialMode]);
+
+  function setField(key, value) {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function setModeAndUrl(nextMode) {
+    setMessage('');
+    setMode(nextMode);
+
+    if (nextMode === 'register') navigate('/register', { replace: true });
+    else if (nextMode === 'forgot') navigate('/forgot-password', { replace: true });
+    else navigate('/login', { replace: true });
+  }
+
+  function accountPayload() {
+    const raw = String(form.account || '').trim();
+
+    if (raw.includes('@')) return { email: raw.toLowerCase() };
+
+    return { phone: raw };
+  }
+
+  async function saveSession(data) {
+    if (data?.accessToken) localStorage.setItem('accessToken', data.accessToken);
+    if (data?.refreshToken) localStorage.setItem('refreshToken', data.refreshToken);
+    if (data?.user) localStorage.setItem('user', JSON.stringify(data.user));
+
+    if (typeof auth?.reload === 'function') await auth.reload();
+    if (typeof auth?.refresh === 'function') await auth.refresh();
+    if (typeof auth?.setUser === 'function' && data?.user) auth.setUser(data.user);
+  }
+
+  async function login() {
+    setLoading(true);
+    setMessage('');
+
+    try {
+      const { data } = await api.post('/auth/login/password', {
+        phone: form.phone.trim(),
+        password: form.password,
+        device: { platform: 'web', name: 'Web Browser' },
+      });
+
+      await saveSession(data);
+      navigate('/chats', { replace: true });
+      window.location.reload();
+    } catch (error) {
+      setMessage(cleanError(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function requestRegisterOtp() {
+    const email = form.email.trim().toLowerCase();
+
+    if (!form.phone.trim() || !email) {
+      setMessage('Nhập số điện thoại và Gmail trước.');
+      return;
+    }
+
+    if (!email.includes('@')) {
+      setMessage('Gmail không hợp lệ.');
+      return;
+    }
+
+    setSendingOtp(true);
+    setMessage('');
+
+    try {
+      const { data } = await api.post('/auth/request-otp', {
+        phone: form.phone.trim(),
+        email,
+        purpose: 'register',
+        channel: 'email',
+      });
+
+      if (data.devCode) setField('otp', data.devCode);
+      setMessage(data.message || 'Đã gửi OTP về Gmail.');
+    } catch (error) {
+      setMessage(cleanError(error));
+    } finally {
+      setSendingOtp(false);
+    }
+  }
+
+  async function register() {
+    const email = form.email.trim().toLowerCase();
+
+    if (!form.displayName.trim() || !form.phone.trim() || !email || !form.password || !form.otp.trim()) {
+      setMessage('Nhập đủ tên, số điện thoại, Gmail, mật khẩu và OTP.');
+      return;
+    }
+
+    if (form.confirmPassword && form.confirmPassword !== form.password) {
+      setMessage('Mật khẩu nhập lại không khớp.');
+      return;
+    }
+
+    setLoading(true);
+    setMessage('');
+
+    try {
+      const { data } = await api.post('/auth/register', {
+        phone: form.phone.trim(),
+        email,
+        displayName: form.displayName.trim(),
+        password: form.password,
+        otp: form.otp.trim(),
+        accountType: 'personal',
+        device: { platform: 'web', name: 'Web Browser' },
+      });
+
+      await saveSession(data);
+      navigate('/chats', { replace: true });
+      window.location.reload();
+    } catch (error) {
+      setMessage(cleanError(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function requestResetOtp() {
+    if (!form.account.trim()) {
+      setMessage('Nhập Gmail hoặc số điện thoại tài khoản.');
+      return;
+    }
+
+    setSendingOtp(true);
+    setMessage('');
+
+    try {
+      const { data } = await api.post('/auth/forgot-password', accountPayload());
+
+      if (data.devCode) setField('otp', data.devCode);
+      setMessage(data.message || 'Đã gửi OTP đặt lại mật khẩu.');
+    } catch (error) {
+      setMessage(cleanError(error));
+    } finally {
+      setSendingOtp(false);
+    }
+  }
+
+  async function resetPassword() {
+    if (!form.account.trim() || !form.otp.trim() || !form.newPassword) {
+      setMessage('Nhập Gmail/số điện thoại, OTP và mật khẩu mới.');
+      return;
+    }
+
+    if (form.confirmPassword && form.confirmPassword !== form.newPassword) {
+      setMessage('Mật khẩu nhập lại không khớp.');
+      return;
+    }
+
+    setLoading(true);
+    setMessage('');
+
+    try {
+      await api.post('/auth/reset-password', {
+        ...accountPayload(),
+        otp: form.otp.trim(),
+        newPassword: form.newPassword,
+      });
+
+      setMessage('Đã đổi mật khẩu. Hãy đăng nhập lại.');
+      setModeAndUrl('login');
+    } catch (error) {
+      setMessage(cleanError(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div style={{ minHeight: '100vh', padding: 20, background: 'linear-gradient(135deg,#eef2ff,#fff)' }}>
+      <div style={box}>
+        <h1 style={{ margin: 0, fontSize: 30 }}>Nexora Connect</h1>
+        <p style={{ color: '#64748b', fontWeight: 700 }}>Đăng ký bằng Gmail OTP, quên mật khẩu và đổi mật khẩu.</p>
+
+        {mode !== 'forgot' ? (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
+            <button
+              type="button"
+              style={{ ...btn, background: mode === 'login' ? '#1877f2' : '#e5e7eb', color: mode === 'login' ? '#fff' : '#334155' }}
+              onClick={() => setModeAndUrl('login')}
+            >
+              Đăng nhập
+            </button>
+            <button
+              type="button"
+              style={{ ...btn, background: mode === 'register' ? '#1877f2' : '#e5e7eb', color: mode === 'register' ? '#fff' : '#334155' }}
+              onClick={() => setModeAndUrl('register')}
+            >
+              Đăng ký
+            </button>
+          </div>
+        ) : null}
+
+        <h2 style={{ marginTop: 0 }}>{modeTitle(mode)}</h2>
+
+        <div style={{ display: 'grid', gap: 12 }}>
+          {mode === 'login' ? (
+            <>
+              <input style={input} value={form.phone} onChange={(e) => setField('phone', e.target.value)} placeholder="Số điện thoại" />
+              <input style={input} type="password" value={form.password} onChange={(e) => setField('password', e.target.value)} placeholder="Mật khẩu" />
+              <button type="button" style={btn} disabled={loading} onClick={login}>{loading ? 'Đang xử lý...' : 'Đăng nhập'}</button>
+              <button type="button" style={{ ...btn, background: 'transparent', color: '#1877f2' }} onClick={() => setModeAndUrl('forgot')}>Quên mật khẩu?</button>
+              <div style={{ textAlign: 'center', color: '#64748b', fontWeight: 700 }}>
+                Chưa có tài khoản? <Link to="/register">Đăng ký</Link>
+              </div>
+            </>
+          ) : null}
+
+          {mode === 'register' ? (
+            <>
+              <input style={input} value={form.displayName} onChange={(e) => setField('displayName', e.target.value)} placeholder="Tên hiển thị" />
+              <input style={input} value={form.phone} onChange={(e) => setField('phone', e.target.value)} placeholder="Số điện thoại" />
+              <input style={input} value={form.email} onChange={(e) => setField('email', e.target.value)} placeholder="Gmail nhận OTP" />
+              <input style={input} type="password" value={form.password} onChange={(e) => setField('password', e.target.value)} placeholder="Mật khẩu" />
+              <input style={input} type="password" value={form.confirmPassword} onChange={(e) => setField('confirmPassword', e.target.value)} placeholder="Nhập lại mật khẩu" />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: 8 }}>
+                <input style={input} value={form.otp} onChange={(e) => setField('otp', e.target.value)} placeholder="OTP Gmail" />
+                <button type="button" style={btn} disabled={sendingOtp} onClick={requestRegisterOtp}>{sendingOtp ? 'Gửi...' : 'Gửi OTP'}</button>
+              </div>
+              <button type="button" style={btn} disabled={loading} onClick={register}>{loading ? 'Đang tạo...' : 'Tạo tài khoản'}</button>
+              <div style={{ textAlign: 'center', color: '#64748b', fontWeight: 700 }}>
+                Đã có tài khoản? <Link to="/login">Đăng nhập</Link>
+              </div>
+            </>
+          ) : null}
+
+          {mode === 'forgot' ? (
+            <>
+              <input style={input} value={form.account} onChange={(e) => setField('account', e.target.value)} placeholder="Gmail hoặc số điện thoại" />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: 8 }}>
+                <input style={input} value={form.otp} onChange={(e) => setField('otp', e.target.value)} placeholder="OTP" />
+                <button type="button" style={btn} disabled={sendingOtp} onClick={requestResetOtp}>{sendingOtp ? 'Gửi...' : 'Gửi OTP'}</button>
+              </div>
+              <input style={input} type="password" value={form.newPassword} onChange={(e) => setField('newPassword', e.target.value)} placeholder="Mật khẩu mới" />
+              <input style={input} type="password" value={form.confirmPassword} onChange={(e) => setField('confirmPassword', e.target.value)} placeholder="Nhập lại mật khẩu mới" />
+              <button type="button" style={btn} disabled={loading} onClick={resetPassword}>{loading ? 'Đang xử lý...' : 'Đặt lại mật khẩu'}</button>
+              <button type="button" style={{ ...btn, background: 'transparent', color: '#1877f2' }} onClick={() => setModeAndUrl('login')}>Quay lại đăng nhập</button>
+            </>
+          ) : null}
+        </div>
+
+        {message ? <div style={{ marginTop: 14, padding: 12, borderRadius: 14, background: '#f1f5f9', color: '#0f172a', fontWeight: 800 }}>{message}</div> : null}
+      </div>
+    </div>
+  );
+}

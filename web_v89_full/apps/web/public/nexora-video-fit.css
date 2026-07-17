@@ -1,0 +1,139 @@
+/*
+  Nexora Timeline video fit fix
+  Chỉ hoạt động khi tab "Video" trong trang Nhật ký đang được chọn.
+*/
+
+body.nx-video-tab-active {
+  --nx-video-stage-height: 68dvh;
+}
+
+body.nx-video-tab-active .nx-video-fit-stage {
+  position: relative !important;
+  width: 100% !important;
+  height: var(--nx-video-stage-height) !important;
+  min-height: 360px !important;
+  max-height: calc(100dvh - 92px) !important;
+  overflow: hidden !important;
+  border-radius: 18px !important;
+  background: #030712 !important;
+  isolation: isolate;
+}
+
+body.nx-video-tab-active .nx-video-fit-stage video.nx-video-fit-media,
+body.nx-video-tab-active .nx-video-fit-stage > img.nx-video-fit-media,
+body.nx-video-tab-active .nx-video-fit-stage picture > img.nx-video-fit-media {
+  position: absolute !important;
+  inset: 0 !important;
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+
+  /* Quan trọng: không crop mất đầu/chân video */
+  object-fit: contain !important;
+  object-position: center center !important;
+
+  margin: 0 !important;
+  padding: 0 !important;
+  border-radius: inherit !important;
+  transform: none !important;
+  scale: 1 !important;
+  background: #030712 !important;
+}
+
+body.nx-video-tab-active .nx-video-fit-stage video.nx-video-fit-media {
+  z-index: 1;
+}
+
+/* Giữ các nút thích/bình luận/chia sẻ nổi trên video */
+body.nx-video-tab-active .nx-video-fit-stage > :not(video):not(picture):not(img) {
+  position: relative;
+  z-index: 2;
+}
+
+/* Card video không được tự bó chiều cao */
+body.nx-video-tab-active .nx-video-fit-card {
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow: visible !important;
+  scroll-margin-top: 86px;
+  scroll-snap-align: start;
+}
+
+/* Nút toàn màn hình do hotfix thêm */
+body.nx-video-tab-active .nx-video-fit-fullscreen {
+  position: absolute !important;
+  z-index: 30 !important;
+  right: 14px !important;
+  top: 14px !important;
+  width: 42px !important;
+  height: 42px !important;
+  min-width: 42px !important;
+  min-height: 42px !important;
+  display: grid !important;
+  place-items: center !important;
+  padding: 0 !important;
+  border: 1px solid rgba(255, 255, 255, .24) !important;
+  border-radius: 999px !important;
+  background: rgba(3, 7, 18, .62) !important;
+  color: #fff !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .24) !important;
+  backdrop-filter: blur(10px);
+  cursor: pointer;
+}
+
+body.nx-video-tab-active .nx-video-fit-fullscreen:hover {
+  background: rgba(3, 7, 18, .82) !important;
+}
+
+/* Khung cuộn từng video giống feed dọc */
+body.nx-video-tab-active .nx-video-fit-scroll {
+  scroll-snap-type: y proximity;
+  overscroll-behavior-y: contain;
+}
+
+/* Video fullscreen phải luôn dùng contain */
+.nx-video-fit-stage:fullscreen,
+.nx-video-fit-stage:-webkit-full-screen {
+  width: 100vw !important;
+  height: 100vh !important;
+  max-height: none !important;
+  border-radius: 0 !important;
+  background: #000 !important;
+}
+
+.nx-video-fit-stage:fullscreen video,
+.nx-video-fit-stage:-webkit-full-screen video {
+  object-fit: contain !important;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+@media (max-width: 900px) {
+  body.nx-video-tab-active .nx-video-fit-stage {
+    min-height: 420px !important;
+    max-height: calc(100dvh - 76px) !important;
+    border-radius: 14px !important;
+  }
+}
+
+@media (max-width: 600px) {
+  body.nx-video-tab-active {
+    --nx-video-stage-height: calc(100dvh - 118px);
+  }
+
+  body.nx-video-tab-active .nx-video-fit-stage {
+    width: 100vw !important;
+    min-height: 460px !important;
+    margin-left: calc(50% - 50vw) !important;
+    border-radius: 0 !important;
+  }
+
+  body.nx-video-tab-active .nx-video-fit-fullscreen {
+    right: 10px !important;
+    top: 10px !important;
+  }
+}

@@ -1,0 +1,9 @@
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const path = event.notification.data?.path || '/chats';
+  event.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windows) => {
+    const existing = windows[0];
+    if (existing) return existing.focus().then(() => existing.navigate(path));
+    return clients.openWindow(path);
+  }));
+});

@@ -1,0 +1,333 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Camera, CameraOff, Maximize2, Mic, MicOff, MonitorUp, PhoneOff, RefreshCcw, Volume2 } from 'lucide-react';
+import { api } from '../services/api';
+import { useSocket } from '../context/SocketContext';
+import Avatar from './Avatar';
+
+const DEFAULT_ICE = [{ urls: ['stun:stun.l.google.com:19302', 'stun:global.stun.twilio.com:3478'] }];
+
+export default function CallModal({ conversation, mode = 'video', callSessionId, direction = 'outgoing', externalStatus, onClose }) {
+  const { socket } = useSocket();
+  const localVideo = useRef(null);
+  const localStream = useRef(null);
+  const cameraStream = useRef(null);
+  const screenStream = useRef(null);
+  const peers = useRef(new Map());
+  const pendingIce = useRef(new Map());
+  const makingOffer = useRef(new Set());
+  const [remoteStreams, setRemoteStreams] = useState([]);
+  const [micOn, setMicOn] = useState(true);
+  const [cameraOn, setCameraOn] = useState(mode === 'video');
+  const [sharing, setSharing] = useState(false);
+  const [soundLocked, setSoundLocked] = useState(false);
+  const [status, setStatus] = useState(direction === 'outgoing' ? 'Đang đổ chuông…' : 'Đang kết nối…');
+  const [facingMode, setFacingMode] = useState('user');
+  const iceServers = useRef(DEFAULT_ICE);
+
+  const title = useMemo(() => conversation.name || conversation.members?.find((member) => member.user?.displayName)?.user?.displayName || 'Cuộc gọi Nexora', [conversation]);
+  const isVideo = mode === 'video';
+
+  const shouldCreateOffer = (target) => String(socket?.id || '') < String(target || '');
+
+  const flushPendingIce = async (target, pc) => {
+    const items = pendingIce.current.get(target) || [];
+    pendingIce.current.delete(target);
+    for (const candidate of items) {
+      try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); } catch { /* ignore stale candidate */ }
+    }
+  };
+
+  const upsertRemote = (socketId, stream, user) => {
+    setRemoteStreams((list) => {
+      const index = list.findIndex((item) => item.socketId === socketId);
+      const item = { socketId, stream, user };
+      return index === -1 ? [...list, item] : list.map((old, i) => i === index ? { ...old, ...item } : old);
+    });
+  };
+
+  const removeRemote = (socketId) => {
+    peers.current.get(socketId)?.close();
+    peers.current.delete(socketId);
+    pendingIce.current.delete(socketId);
+    makingOffer.current.delete(socketId);
+    setRemoteStreams((list) => list.filter((item) => item.socketId !== socketId));
+  };
+
+  const createPeer = (target, user) => {
+    if (peers.current.has(target)) return peers.current.get(target);
+    const pc = new RTCPeerConnection({ iceServers: iceServers.current?.length ? iceServers.current : DEFAULT_ICE });
+    const stream = localStream.current;
+    stream?.getTracks().forEach((track) => pc.addTrack(track, stream));
+
+    const remote = new MediaStream();
+    pc.ontrack = (event) => {
+      const streams = event.streams?.length ? event.streams : [];
+      if (streams[0]) {
+        streams[0].getTracks().forEach((track) => {
+          if (!remote.getTracks().some((item) => item.id === track.id)) remote.addTrack(track);
+        });
+      } else if (event.track && !remote.getTracks().some((item) => item.id === event.track.id)) {
+        remote.addTrack(event.track);
+      }
+      upsertRemote(target, remote, user);
+      setStatus('Đang gọi');
+    };
+
+    pc.onicecandidate = (event) => {
+      if (event.candidate) socket?.emit('webrtc:ice-candidate', { target, conversationId: conversation._id, callSessionId, candidate: event.candidate });
+    };
+
+    pc.onconnectionstatechange = () => {
+      if (['connected', 'completed'].includes(pc.connectionState)) setStatus('Đang gọi');
+      if (['failed', 'closed'].includes(pc.connectionState)) removeRemote(target);
+      if (pc.connectionState === 'disconnected') setStatus('Mạng không ổn định, đang thử kết nối lại…');
+    };
+
+    peers.current.set(target, pc);
+    return pc;
+  };
+
+  const makeOffer = async (target, user) => {
+    if (!target || makingOffer.current.has(target)) return;
+    const pc = createPeer(target, user);
+    if (pc.signalingState !== 'stable') return;
+    makingOffer.current.add(target);
+    try {
+      const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
+      await pc.setLocalDescription(offer);
+      socket?.emit('webrtc:offer', { target, conversationId: conversation._id, callSessionId, sdp: pc.localDescription });
+    } finally {
+      makingOffer.current.delete(target);
+    }
+  };
+
+  useEffect(() => {
+    if (!socket) {
+      setStatus('Đang kết nối lại máy chủ…');
+      return undefined;
+    }
+    let mounted = true;
+
+    const boot = async () => {
+      try {
+        const { data } = await api.get('/calls/ice-servers');
+        iceServers.current = Array.isArray(data) && data.length ? data : DEFAULT_ICE;
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+          video: isVideo ? { facingMode, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 24, max: 30 } } : false
+        });
+        if (!mounted) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        localStream.current = stream;
+        cameraStream.current = stream;
+        if (localVideo.current) {
+          localVideo.current.srcObject = stream;
+          localVideo.current.muted = true;
+          await localVideo.current.play?.().catch(() => undefined);
+        }
+        socket.emit('call:join', { conversationId: conversation._id, callSessionId, mode }, async (result) => {
+          if (!result?.ok) return setStatus(result?.message || 'Không thể tham gia cuộc gọi');
+          const participants = result.participants || [];
+          await Promise.all(participants.filter((id) => shouldCreateOffer(id)).map((id) => makeOffer(id)));
+          setStatus(participants.length ? 'Đang gọi' : direction === 'outgoing' ? 'Đang chờ người nghe máy…' : 'Đang kết nối…');
+        });
+      } catch (error) {
+        const secure = window.isSecureContext || ['localhost', '127.0.0.1'].includes(window.location.hostname);
+        setStatus(!secure ? 'Camera/micro chỉ chạy trên HTTPS hoặc localhost. Không dùng IP LAN HTTP để test gọi.' : (error.message || 'Không thể mở camera/micro.'));
+      }
+    };
+
+    const onOffer = async ({ from, sdp, user, callSessionId: incomingSessionId }) => {
+      if (String(incomingSessionId) !== String(callSessionId)) return;
+      const pc = createPeer(from, user);
+      const offerCollision = makingOffer.current.has(from) || pc.signalingState !== 'stable';
+      if (offerCollision && shouldCreateOffer(from)) return;
+      await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+      await flushPendingIce(from, pc);
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      socket.emit('webrtc:answer', { target: from, conversationId: conversation._id, callSessionId, sdp: pc.localDescription });
+    };
+
+    const onAnswer = async ({ from, sdp, callSessionId: incomingSessionId }) => {
+      if (String(incomingSessionId) !== String(callSessionId)) return;
+      const pc = peers.current.get(from);
+      if (!pc || pc.signalingState === 'stable') return;
+      await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+      await flushPendingIce(from, pc);
+    };
+
+    const onIce = async ({ from, candidate, callSessionId: incomingSessionId }) => {
+      if (String(incomingSessionId) !== String(callSessionId) || !candidate) return;
+      const pc = peers.current.get(from) || createPeer(from);
+      if (!pc.remoteDescription) {
+        const items = pendingIce.current.get(from) || [];
+        items.push(candidate);
+        pendingIce.current.set(from, items);
+        return;
+      }
+      try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); } catch { /* peer may still be closing */ }
+    };
+
+    const onJoined = ({ socketId, displayName, avatar }) => {
+      setStatus(`${displayName || 'Một thành viên'} đã tham gia`);
+      upsertRemote(socketId, new MediaStream(), { displayName, avatar });
+      if (shouldCreateOffer(socketId)) void makeOffer(socketId, { displayName, avatar });
+    };
+
+    const onLeft = ({ socketId }) => removeRemote(socketId);
+
+    socket.on('webrtc:offer', onOffer);
+    socket.on('webrtc:answer', onAnswer);
+    socket.on('webrtc:ice-candidate', onIce);
+    socket.on('call:participant-joined', onJoined);
+    socket.on('call:participant-left', onLeft);
+    void boot();
+
+    return () => {
+      mounted = false;
+      socket.off('webrtc:offer', onOffer);
+      socket.off('webrtc:answer', onAnswer);
+      socket.off('webrtc:ice-candidate', onIce);
+      socket.off('call:participant-joined', onJoined);
+      socket.off('call:participant-left', onLeft);
+      localStream.current?.getTracks().forEach((track) => track.stop());
+      cameraStream.current?.getTracks().forEach((track) => track.stop());
+      screenStream.current?.getTracks().forEach((track) => track.stop());
+      peers.current.forEach((pc) => pc.close());
+      peers.current.clear();
+      pendingIce.current.clear();
+    };
+  }, [socket, conversation._id, callSessionId, mode, isVideo]);
+
+  useEffect(() => {
+    if (externalStatus) setStatus(externalStatus);
+  }, [externalStatus]);
+
+  const toggleMic = () => {
+    const next = !micOn;
+    setMicOn(next);
+    localStream.current?.getAudioTracks().forEach((track) => { track.enabled = next; });
+  };
+
+  const toggleCamera = () => {
+    if (!isVideo) return;
+    const next = !cameraOn;
+    setCameraOn(next);
+    localStream.current?.getVideoTracks().forEach((track) => { track.enabled = next; });
+  };
+
+  const shareScreen = async () => {
+    if (sharing || !isVideo) return;
+    try {
+      const screen = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+      const screenTrack = screen.getVideoTracks()[0];
+      screenStream.current = screen;
+      peers.current.forEach((pc) => {
+        const sender = pc.getSenders().find((item) => item.track?.kind === 'video');
+        if (sender) sender.replaceTrack(screenTrack);
+      });
+      if (localVideo.current) localVideo.current.srcObject = screen;
+      setSharing(true);
+      screenTrack.onended = () => {
+        const cameraTrack = cameraStream.current?.getVideoTracks()[0];
+        peers.current.forEach((pc) => pc.getSenders().find((item) => item.track?.kind === 'video')?.replaceTrack(cameraTrack));
+        if (localVideo.current) localVideo.current.srcObject = cameraStream.current;
+        setSharing(false);
+      };
+    } catch { /* user cancelled */ }
+  };
+
+  const switchCamera = async () => {
+    if (!isVideo || sharing) return;
+    const next = facingMode === 'user' ? 'environment' : 'user';
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: next }, audio: false });
+      const track = stream.getVideoTracks()[0];
+      const old = cameraStream.current?.getVideoTracks()[0];
+      if (old) { cameraStream.current.removeTrack(old); old.stop(); }
+      cameraStream.current.addTrack(track);
+      localStream.current = cameraStream.current;
+      peers.current.forEach((pc) => pc.getSenders().find((item) => item.track?.kind === 'video')?.replaceTrack(track));
+      if (localVideo.current) localVideo.current.srcObject = cameraStream.current;
+      setFacingMode(next);
+    } catch { /* device may only have one camera */ }
+  };
+
+  const end = async () => {
+    setStatus('Đang kết thúc cuộc gọi…');
+    try {
+      if (callSessionId) await api.post(`/calls/${callSessionId}/end`);
+    } catch {
+      socket?.emit('call:leave', { callSessionId });
+    } finally {
+      onClose();
+    }
+  };
+
+  return (
+    <div className="call-overlay" onPointerDown={() => setSoundLocked(false)}>
+      <div className="call-window">
+        <div className="call-head"><div><b>{title}</b><span>{status}</span></div><Maximize2 size={20} /></div>
+        {soundLocked ? <button className="call-sound-unlock" onClick={() => setSoundLocked(false)}><Volume2 size={16} /> Bật âm thanh</button> : null}
+        <div className={`video-grid count-${Math.min(remoteStreams.length + 1, 4)}`}>
+          <div className="video-tile local-tile">
+            {isVideo ? <video ref={localVideo} autoPlay muted playsInline /> : <div className="audio-avatar"><Avatar user={{ displayName: 'Bạn' }} size={88} /><span>Bạn</span></div>}
+            <span className="tile-label">Bạn {micOn ? '' : '• Đã tắt mic'}</span>
+          </div>
+          {remoteStreams.map((item) => <RemoteMedia key={item.socketId} item={item} mode={mode} onSoundLocked={() => setSoundLocked(true)} />)}
+        </div>
+        <div className="call-controls">
+          <button className={!micOn ? 'off' : ''} onClick={toggleMic}>{micOn ? <Mic /> : <MicOff />}</button>
+          {isVideo ? <button className={!cameraOn ? 'off' : ''} onClick={toggleCamera}>{cameraOn ? <Camera /> : <CameraOff />}</button> : null}
+          {isVideo ? <button className={sharing ? 'active' : ''} onClick={shareScreen}><MonitorUp /></button> : null}
+          {isVideo ? <button onClick={switchCamera}><RefreshCcw /></button> : null}
+          <button className="hangup" onClick={end}><PhoneOff /></button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RemoteMedia({ item, mode, onSoundLocked }) {
+  const videoRef = useRef(null);
+  const audioRef = useRef(null);
+  const hasVideo = mode === 'video' && item.stream?.getVideoTracks?.().length > 0;
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || !item.stream) return undefined;
+    audio.srcObject = item.stream;
+    audio.muted = false;
+    audio.volume = 1;
+    const play = () => audio.play?.().catch(() => onSoundLocked?.());
+    void play();
+    const unlock = () => void play();
+    window.addEventListener('pointerdown', unlock);
+    window.addEventListener('keydown', unlock);
+    return () => {
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
+  }, [item.stream, onSoundLocked]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !item.stream || !hasVideo) return;
+    video.srcObject = item.stream;
+    video.muted = true;
+    video.play?.().catch(() => undefined);
+  }, [item.stream, hasVideo]);
+
+  return (
+    <div className="video-tile">
+      <audio ref={audioRef} autoPlay playsInline controls={false} />
+      {hasVideo
+        ? <video ref={videoRef} autoPlay muted playsInline controls={false} />
+        : <div className="audio-avatar"><Avatar user={item.user} size={88} /><span>{item.user?.displayName || 'Thành viên'}</span></div>}
+      <span className="tile-label">{item.user?.displayName || 'Thành viên'}</span>
+    </div>
+  );
+}

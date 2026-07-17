@@ -1,0 +1,29 @@
+﻿<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b1020" />
+    <title>Nexora Connect</title>
+
+    <!-- Nexora Timeline full-video fix -->
+
+    <!-- Nexora Timeline video force fix V2 -->
+    <link
+      id="nexora-video-force-v2-style"
+      rel="stylesheet"
+      href="/nexora-video-force-v2.css?v=20260711-2"
+    />
+    <script
+      id="nexora-video-force-v2-runtime"
+      src="/nexora-video-force-v2.js?v=20260711-2"
+      defer
+    ></script>
+
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
+

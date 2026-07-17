@@ -1,0 +1,82 @@
+export function hasEmailOtpConfigured() {
+  return Boolean(
+    String(process.env.GMAIL_USER || process.env.EMAIL_USER || process.env.SMTP_USER || '').trim() &&
+    String(process.env.GMAIL_APP_PASSWORD || process.env.EMAIL_PASS || process.env.SMTP_PASS || '').trim()
+  );
+}
+
+export async function sendOtpEmail(email, code, purpose = 'login') {
+  const to = String(email || '').trim().toLowerCase();
+
+  if (!to) {
+    throw Object.assign(new Error('Missing email receiver.'), { status: 400 });
+  }
+
+  const gmailUser = String(process.env.GMAIL_USER || process.env.EMAIL_USER || process.env.SMTP_USER || '').trim();
+  const gmailPass = String(process.env.GMAIL_APP_PASSWORD || process.env.EMAIL_PASS || process.env.SMTP_PASS || '').trim();
+  const from = String(process.env.EMAIL_FROM || (gmailUser ? `Nexora Connect <${gmailUser}>` : '')).trim();
+
+  // Do not silently return OTP 123456 when Gmail is expected.
+  // Console fallback is allowed only for local console OTP mode.
+  const allowConsoleFallback =
+    String(process.env.NODE_ENV || 'development').toLowerCase() !== 'production' &&
+    String(process.env.OTP_PROVIDER || 'console').toLowerCase() === 'console';
+
+  if (!gmailUser || !gmailPass) {
+    if (allowConsoleFallback) {
+      console.log(`[DEV EMAIL OTP] to=${to} purpose=${purpose} code=${code}`);
+      return { channel: 'console' };
+    }
+
+    throw Object.assign(
+      new Error('Gmail OTP is not configured. Set GMAIL_USER and GMAIL_APP_PASSWORD in .env.'),
+      { status: 500 },
+    );
+  }
+
+  const subjectMap = {
+    register: 'Mã OTP đăng ký Nexora Connect',
+    login: 'Mã OTP đăng nhập Nexora Connect',
+    reset: 'Mã OTP đặt lại mật khẩu Nexora Connect',
+  };
+
+  const subject = subjectMap[purpose] || 'Mã OTP Nexora Connect';
+  const text = `Mã OTP Nexora Connect của bạn là ${code}. Mã có hiệu lực trong thời gian ngắn. Không chia sẻ mã này cho bất kỳ ai.`;
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.5;color:#111827">
+      <h2 style="margin:0 0 12px">Nexora Connect</h2>
+      <p>Mã OTP của bạn:</p>
+      <div style="font-size:30px;font-weight:800;letter-spacing:6px;background:#f1f5f9;padding:14px 18px;border-radius:14px;display:inline-block">${code}</div>
+      <p style="color:#64748b">Không chia sẻ mã này cho bất kỳ ai.</p>
+    </div>
+  `;
+
+  try {
+    const nodemailer = await import('nodemailer');
+
+    const transporter = nodemailer.default.createTransport({
+      service: 'gmail',
+      auth: {
+        user: gmailUser,
+        pass: gmailPass,
+      },
+    });
+
+    await transporter.sendMail({
+      from,
+      to,
+      subject,
+      text,
+      html,
+    });
+
+    return { channel: 'email' };
+  } catch (error) {
+    console.error('Send OTP email failed:', error.message);
+    throw Object.assign(
+      new Error(`Không gửi được Gmail OTP: ${error.message}`),
+      { status: 500 },
+    );
+  }
+}

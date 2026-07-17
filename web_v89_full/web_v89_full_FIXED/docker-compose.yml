@@ -1,0 +1,52 @@
+services:
+  app:
+    build: .
+    container_name: nexora-connect
+    restart: unless-stopped
+    profiles: ["full"]
+    depends_on:
+      - mongo
+    ports:
+      - "4000:4000"
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      MONGODB_URI: mongodb://mongo:27017/nexora_connect
+      CLIENT_URL: http://localhost:4000
+      PUBLIC_SERVER_URL: http://localhost:4000
+      UPLOAD_DIR: /app/apps/server/uploads
+      EXPECTED_ORIGIN: http://localhost:4000
+      RP_ID: localhost
+      JWT_ACCESS_SECRET: local-docker-access-secret-change-production
+      JWT_REFRESH_SECRET: local-docker-refresh-secret-change-production
+      OTP_PROVIDER: console
+    volumes:
+      - uploads_data:/app/apps/server/uploads
+
+  mongo:
+    image: mongo:8
+    container_name: nexora-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  coturn:
+    image: coturn/coturn:4.6.3
+    container_name: nexora-coturn
+    restart: unless-stopped
+    network_mode: host
+    command:
+      - -n
+      - --log-file=stdout
+      - --min-port=49160
+      - --max-port=49200
+      - --realm=localhost
+      - --user=nexora:nexora-turn-secret
+      - --lt-cred-mech
+    profiles: ["turn"]
+
+volumes:
+  mongo_data:
+  uploads_data:

@@ -1,0 +1,145 @@
+import { useEffect, useRef, useState } from 'react';
+import { BellRing, Camera, Fingerprint, Laptop, MessageCircle, QrCode, Save, Search, ShieldCheck, Smartphone, Trash2 } from 'lucide-react';
+import { startRegistration } from '@simplewebauthn/browser';
+import { QRCodeSVG } from 'qrcode.react';
+import { api, errorMessage } from '../services/api';
+import { useAuth } from '../context/AuthContext';
+import { useSocket } from '../context/SocketContext';
+import Avatar from '../components/Avatar';
+import ChangePasswordCard from '../components/ChangePasswordCard';
+
+const defaultSettings = {
+  allowMessagesFromStrangers: true,
+  discoverableByPhone: true,
+  discoverableByQr: true,
+  allowFriendRequests: true,
+  readReceipts: true,
+  lastSeenVisibility: 'friends'
+};
+
+export default function ProfilePage() {
+  const { user, setUser } = useAuth();
+  const { enableDeviceNotifications } = useSocket();
+  const [form, setForm] = useState({
+    displayName: user.displayName,
+    username: user.username || '',
+    bio: user.bio || '',
+    avatar: user.avatar || '',
+    cover: user.cover || '',
+    settings: { ...defaultSettings, ...(user.settings || {}) }
+  });
+  const [sessions, setSessions] = useState([]);
+  const [status, setStatus] = useState('');
+  const [qrValue, setQrValue] = useState('');
+  const avatarInput = useRef(null);
+  const coverInput = useRef(null);
+
+  const loadSessions = async () => {
+    const { data } = await api.get('/auth/sessions');
+    setSessions(data);
+  };
+
+  useEffect(() => {
+    void loadSessions();
+    api.get('/users/qr').then(({ data }) => setQrValue(data.value));
+  }, []);
+
+  const upload = async (file, field) => {
+    try {
+      const body = new FormData();
+      body.append('file', file);
+      const media = (await api.post('/uploads', body, { headers: { 'Content-Type': 'multipart/form-data' } })).data;
+      setForm((current) => ({ ...current, [field]: media.url }));
+    } catch (error) {
+      setStatus(errorMessage(error));
+    }
+  };
+
+  const save = async () => {
+    try {
+      const { data } = await api.patch('/users/me', form);
+      setUser(data);
+      setForm((current) => ({ ...current, settings: { ...defaultSettings, ...(data.settings || current.settings) } }));
+      setStatus('Đã lưu hồ sơ và cài đặt quyền riêng tư.');
+    } catch (error) {
+      setStatus(errorMessage(error));
+    }
+  };
+
+  const registerPasskey = async () => {
+    setStatus('');
+    try {
+      const options = (await api.post('/auth/passkeys/register/options')).data;
+      const response = await startRegistration({ optionsJSON: options });
+      await api.post('/auth/passkeys/register/verify', { response, name: navigator.platform || 'Thiết bị sinh trắc học' });
+      setStatus('Đã bật đăng nhập bằng FaceID/Fingerprint.');
+    } catch (error) {
+      setStatus(errorMessage(error));
+    }
+  };
+
+  const enableNotifications = async () => {
+    const permission = await enableDeviceNotifications();
+    if (permission === 'granted') setStatus('Đã bật chuông và thông báo trên thiết bị này.');
+    else if (permission === 'denied') setStatus('Trình duyệt đang chặn thông báo. Hãy bật lại trong cài đặt trang web.');
+    else setStatus('Thiết bị hoặc trình duyệt này không hỗ trợ thông báo hệ thống.');
+  };
+
+  const revoke = async (id) => {
+    await api.delete(`/auth/sessions/${id}`);
+    await loadSessions();
+  };
+
+  const toggle = (key) => setForm((current) => ({
+    ...current,
+    settings: { ...current.settings, [key]: !current.settings[key] }
+  }));
+
+  return <div className="profile-page">
+    <section className="profile-card card">
+      <div className="profile-cover" style={{ backgroundImage: form.cover ? `url(${form.cover})` : undefined }}>
+        <button onClick={() => coverInput.current?.click()}><Camera /> Đổi ảnh bìa</button>
+        <input ref={coverInput} hidden type="file" accept="image/*" onChange={(event) => event.target.files[0] && upload(event.target.files[0], 'cover')} />
+      </div>
+      <div className="profile-avatar-row">
+        <div className="profile-avatar">
+          <Avatar user={{ ...user, avatar: form.avatar }} size={108} />
+          <button onClick={() => avatarInput.current?.click()}><Camera /></button>
+          <input ref={avatarInput} hidden type="file" accept="image/*" onChange={(event) => event.target.files[0] && upload(event.target.files[0], 'avatar')} />
+        </div>
+        <div><h2>{form.displayName}</h2><p>+{user.phone} · {user.accountType === 'official' ? 'Official Account' : 'Tài khoản cá nhân'}</p></div>
+      </div>
+      <div className="profile-form">
+        <label>Tên hiển thị<input value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} /></label>
+        <label>Username<input value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} placeholder="tenkhongdau" /></label>
+        <label className="full">Giới thiệu<textarea value={form.bio} onChange={(event) => setForm({ ...form, bio: event.target.value })} maxLength="240" /></label>
+      </div>
+
+      <div className="privacy-settings">
+        <div className="privacy-title"><ShieldCheck /><div><h3>Quyền riêng tư & tìm kiếm</h3><p>Các tùy chọn này được kiểm tra trực tiếp ở server.</p></div></div>
+        <SettingToggle icon={<MessageCircle />} title="Nhận tin nhắn từ người lạ" description="Tắt để chỉ bạn bè và tài khoản OA hiện có có thể nhắn cho bạn." checked={form.settings.allowMessagesFromStrangers} onChange={() => toggle('allowMessagesFromStrangers')} />
+        <SettingToggle icon={<Search />} title="Cho phép tìm bằng số điện thoại" description="Khi tắt, người chưa kết bạn không thể tìm tài khoản bằng số của bạn." checked={form.settings.discoverableByPhone} onChange={() => toggle('discoverableByPhone')} />
+        <SettingToggle icon={<QrCode />} title="Cho phép tìm bằng QR" description="Khi tắt, mã QR cá nhân chỉ còn dùng được với người đã là bạn bè." checked={form.settings.discoverableByQr} onChange={() => toggle('discoverableByQr')} />
+      </div>
+
+      {status && <div className="form-status">{status}</div>}
+      <button className="primary-btn save-profile" onClick={save}><Save /> Lưu thay đổi</button>
+    </section>
+
+    <aside className="profile-side">
+      <div className="card qr-card"><h3>Mã QR cá nhân</h3>{qrValue && <QRCodeSVG value={qrValue} size={150} bgColor="transparent" fgColor="#eef2ff" level="M" />}<p>Người khác quét mã này để tìm hồ sơ nếu bạn cho phép tìm bằng QR.</p></div>
+      <div className="card security-card"><h3><BellRing /> Chuông & thông báo</h3><p>Bật để nghe chuông tin nhắn, cuộc gọi và thấy thông báo khi đang ở trang khác hoặc thu nhỏ trình duyệt.</p><button className="secondary-btn" onClick={enableNotifications}><BellRing /> Bật thông báo thiết bị</button></div>
+      <div className="card security-card"><h3><ShieldCheck /> Bảo mật</h3><p>Đăng ký Passkey để dùng FaceID, Touch ID, Windows Hello hoặc cảm biến vân tay.</p><button className="secondary-btn" onClick={registerPasskey}><Fingerprint /> Bật sinh trắc học</button></div>
+      <div className="card sessions-card"><h3>Thiết bị đăng nhập</h3>{sessions.map((session) => <div className="session-row" key={session.id}>{session.userAgent?.toLowerCase().includes('mobile') ? <Smartphone /> : <Laptop />}<div><b>{session.deviceName}{session.current && ' (hiện tại)'}</b><span>{new Date(session.lastSeenAt).toLocaleString('vi-VN')}</span></div>{!session.current && !session.revokedAt && <button onClick={() => revoke(session.id)}><Trash2 /></button>}</div>)}</div>
+    </aside>
+  </div>;
+}
+
+function SettingToggle({ icon, title, description, checked, onChange }) {
+  return <label className="setting-toggle">
+    <span className="setting-icon">{icon}</span>
+    <span className="setting-copy"><b>{title}</b><small>{description}</small></span>
+    <input type="checkbox" checked={checked} onChange={onChange} />
+    <i className="toggle-track"><i /></i>
+  </label>;
+}

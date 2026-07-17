@@ -1,0 +1,209 @@
+import express from 'express';
+import crypto from 'node:crypto';
+import User from '../models/User.js';
+import { requireAuth } from '../middleware/auth.js';
+import { asyncHandler } from '../utils/asyncHandler.js';
+import { normalizePhone } from '../utils/phone.js';
+import { createNotification } from '../services/notifications.js';
+
+const router = express.Router();
+router.use(requireAuth);
+
+const publicFields = 'displayName username avatar cover bio accountType officialCategory verified lastOnlineAt';
+const publicFieldsWithPhone = `${publicFields} phone`;
+const isFriendWith = (user, targetId) => user.friends.some((id) => String(id) === String(targetId));
+const hashPhone = (phone) => crypto.createHash('sha256').update(phone).digest('hex');
+
+router.get('/me', asyncHandler(async (req, res) => {
+  await req.user.populate([
+    { path: 'friends', select: publicFieldsWithPhone },
+    { path: 'friendRequestsIncoming', select: publicFieldsWithPhone },
+    { path: 'followingOfficial', select: publicFieldsWithPhone }
+  ]);
+  res.json(req.user.toSafeJSON());
+}));
+
+router.patch('/me', asyncHandler(async (req, res) => {
+  const allowed = ['displayName', 'username', 'bio', 'avatar', 'cover', 'officialCategory'];
+  for (const key of allowed) {
+    if (req.body[key] !== undefined) req.user[key] = req.body[key];
+  }
+  if (req.body.settings && typeof req.body.settings === 'object') {
+    const allowedSettings = ['lastSeenVisibility', 'readReceipts', 'allowFriendRequests', 'allowMessagesFromStrangers', 'discoverableByPhone', 'discoverableByQr'];
+    for (const key of allowedSettings) {
+      if (req.body.settings[key] !== undefined) req.user.settings[key] = req.body.settings[key];
+    }
+  }
+  await req.user.save();
+  res.json(req.user.toSafeJSON());
+}));
+
+router.get('/search', asyncHandler(async (req, res) => {
+  const q = String(req.query.q || '').trim();
+  if (!q) return res.json([]);
+  const normalized = normalizePhone(q);
+  const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+  const conditions = [{ displayName: regex }, { username: regex }];
+  if (normalized) conditions.push({ phone: normalized, 'settings.discoverableByPhone': { $ne: false } });
+  const users = await User.find({
+    _id: { $nin: [req.user._id, ...req.user.blockedUsers] },
+    $or: conditions
+  }).select(`${publicFields} phone settings.discoverableByPhone`).limit(30);
+  res.json(users.map((item) => {
+    const value = item.toObject();
+    if (!isFriendWith(req.user, item._id) && item.settings?.discoverableByPhone === false) delete value.phone;
+    delete value.settings;
+    return value;
+  }));
+}));
+
+router.post('/contacts/sync', asyncHandler(async (req, res) => {
+  const phones = [...new Set((req.body.phones || []).map((p) => normalizePhone(p)).filter(Boolean))].slice(0, 5000);
+  req.user.contactHashes = phones.map(hashPhone);
+  await req.user.save();
+  const matches = await User.find({
+    phone: { $in: phones },
+    _id: { $ne: req.user._id },
+    $or: [{ 'settings.discoverableByPhone': { $ne: false } }, { _id: { $in: req.user.friends } }]
+  }).select(publicFieldsWithPhone);
+  const friends = new Set(req.user.friends.map(String));
+  res.json(matches.map((item) => ({ ...item.toObject(), isFriend: friends.has(String(item._id)) })));
+}));
+
+router.post('/friends/request/:userId', asyncHandler(async (req, res) => {
+  const target = await User.findById(req.params.userId);
+  if (!target || !target.isActive) return res.status(404).json({ message: 'Không tìm thấy người dùng.' });
+  if (String(target._id) === String(req.user._id)) return res.status(400).json({ message: 'Không thể kết bạn với chính mình.' });
+  if (req.user.blockedUsers.some((id) => String(id) === String(target._id)) || target.blockedUsers.some((id) => String(id) === String(req.user._id))) {
+    return res.status(403).json({ message: 'Không thể gửi lời mời do danh sách chặn.' });
+  }
+  if (req.user.friends.some((id) => String(id) === String(target._id))) return res.json({ message: 'Hai người đã là bạn.' });
+
+  if (req.user.friendRequestsIncoming.some((id) => String(id) === String(target._id))) {
+    req.user.friendRequestsIncoming.pull(target._id);
+    req.user.friends.addToSet(target._id);
+    target.friendRequestsOutgoing.pull(req.user._id);
+    target.friends.addToSet(req.user._id);
+    await Promise.all([req.user.save(), target.save()]);
+    return res.json({ message: 'Đã trở thành bạn bè.' });
+  }
+
+  req.user.friendRequestsOutgoing.addToSet(target._id);
+  target.friendRequestsIncoming.addToSet(req.user._id);
+  await Promise.all([req.user.save(), target.save()]);
+  await createNotification(req.app.get('io'), {
+    recipient: target._id,
+    actor: req.user._id,
+    type: 'friend_request',
+    title: 'Lời mời kết bạn',
+    body: `${req.user.displayName} đã gửi lời mời kết bạn.`
+  });
+  res.json({ message: 'Đã gửi lời mời kết bạn.' });
+}));
+
+router.post('/friends/accept/:userId', asyncHandler(async (req, res) => {
+  const target = await User.findById(req.params.userId);
+  if (!target || !req.user.friendRequestsIncoming.some((id) => String(id) === String(target._id))) {
+    return res.status(404).json({ message: 'Không tìm thấy lời mời.' });
+  }
+  req.user.friendRequestsIncoming.pull(target._id);
+  req.user.friends.addToSet(target._id);
+  target.friendRequestsOutgoing.pull(req.user._id);
+  target.friends.addToSet(req.user._id);
+  await Promise.all([req.user.save(), target.save()]);
+  await createNotification(req.app.get('io'), {
+    recipient: target._id,
+    actor: req.user._id,
+    type: 'friend_accepted',
+    title: 'Đã chấp nhận kết bạn',
+    body: `${req.user.displayName} đã chấp nhận lời mời của bạn.`
+  });
+  res.json({ message: 'Đã chấp nhận kết bạn.' });
+}));
+
+router.delete('/friends/:userId', asyncHandler(async (req, res) => {
+  const target = await User.findById(req.params.userId);
+  req.user.friends.pull(req.params.userId);
+  if (target) {
+    target.friends.pull(req.user._id);
+    await target.save();
+  }
+  await req.user.save();
+  res.json({ message: 'Đã hủy kết bạn.' });
+}));
+
+router.post('/block/:userId', asyncHandler(async (req, res) => {
+  const target = await User.findById(req.params.userId);
+  if (!target) return res.status(404).json({ message: 'Không tìm thấy người dùng.' });
+  req.user.blockedUsers.addToSet(target._id);
+  req.user.friends.pull(target._id);
+  req.user.friendRequestsIncoming.pull(target._id);
+  req.user.friendRequestsOutgoing.pull(target._id);
+  target.friends.pull(req.user._id);
+  target.friendRequestsIncoming.pull(req.user._id);
+  target.friendRequestsOutgoing.pull(req.user._id);
+  await Promise.all([req.user.save(), target.save()]);
+  res.json({ message: 'Đã chặn người dùng.' });
+}));
+
+router.delete('/block/:userId', asyncHandler(async (req, res) => {
+  req.user.blockedUsers.pull(req.params.userId);
+  await req.user.save();
+  res.json({ message: 'Đã bỏ chặn.' });
+}));
+
+
+router.post('/push-token', asyncHandler(async (req, res) => {
+  const session = req.user.sessions.id(req.sessionId);
+  if (!session) return res.status(404).json({ message: 'Không tìm thấy phiên đăng nhập.' });
+  if (!['web', 'android', 'ios'].includes(req.body.platform)) return res.status(400).json({ message: 'Nền tảng push không hợp lệ.' });
+  session.pushToken = req.body.token;
+  session.pushPlatform = req.body.platform;
+  session.pushEnvironment = req.body.environment || 'development';
+  await req.user.save();
+  res.json({ message: 'Đã đăng ký push token.' });
+}));
+
+router.get('/qr', (req, res) => {
+  res.json({ value: `nexora://user/${req.user._id}` });
+});
+
+router.post('/qr/add', asyncHandler(async (req, res) => {
+  const match = String(req.body.value || '').match(/^nexora:\/\/user\/([a-f\d]{24})$/i);
+  if (!match) return res.status(400).json({ message: 'Mã QR không hợp lệ.' });
+  req.params.userId = match[1];
+  const target = await User.findById(match[1]).select(`${publicFieldsWithPhone} settings.discoverableByQr settings.discoverableByPhone`);
+  if (!target) return res.status(404).json({ message: 'Không tìm thấy người dùng.' });
+  if (!isFriendWith(req.user, target._id) && target.settings?.discoverableByQr === false) {
+    return res.status(403).json({ message: 'Người dùng này đã tắt tìm kiếm bằng mã QR.' });
+  }
+  const value = target.toObject();
+  if (!isFriendWith(req.user, target._id) && target.settings?.discoverableByPhone === false) delete value.phone;
+  delete value.settings;
+  res.json(value);
+}));
+
+
+router.get('/:userId/profile', asyncHandler(async (req, res) => {
+  const target = await User.findById(req.params.userId).select(`${publicFieldsWithPhone} settings.discoverableByPhone friends blockedUsers isActive createdAt`);
+  if (!target || !target.isActive) return res.status(404).json({ message: 'Không tìm thấy người dùng.' });
+  if (target.blockedUsers.some((id) => String(id) === String(req.user._id)) || req.user.blockedUsers.some((id) => String(id) === String(target._id))) {
+    return res.status(403).json({ message: 'Không thể xem hồ sơ do danh sách chặn.' });
+  }
+  const isFriend = isFriendWith(req.user, target._id);
+  const value = target.toObject();
+  if (!isFriend && target.settings?.discoverableByPhone === false) delete value.phone;
+  delete value.settings;
+  delete value.friends;
+  delete value.blockedUsers;
+  res.json({
+    ...value,
+    relationship: {
+      isFriend,
+      incoming: req.user.friendRequestsIncoming.some((id) => String(id) === String(target._id)),
+      outgoing: req.user.friendRequestsOutgoing.some((id) => String(id) === String(target._id))
+    }
+  });
+}));
+
+export default router;

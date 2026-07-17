@@ -1,0 +1,193 @@
+import express from 'express';
+import CallSession from '../models/CallSession.js';
+import { requireAuth } from '../middleware/auth.js';
+import { asyncHandler } from '../utils/asyncHandler.js';
+import { env } from '../config/env.js';
+import { ensureMember } from '../services/messageService.js';
+import {
+  ACTIVE_CALL_STATUSES,
+  RINGING_TTL_MS,
+  expireStaleCalls,
+  finalizeCall
+} from '../services/callLifecycle.js';
+
+const router = express.Router();
+router.use(requireAuth);
+
+async function findBusyUser(userIds, exceptCallId) {
+  const ids = userIds.map(String);
+  const query = {
+    status: { $in: ACTIVE_CALL_STATUSES },
+    ...(exceptCallId ? { _id: { $ne: exceptCallId } } : {}),
+    $or: [
+      { startedBy: { $in: ids } },
+      { invitees: { $in: ids } },
+      { 'participants.user': { $in: ids }, 'participants.leftAt': null }
+    ]
+  };
+  const session = await CallSession.findOne(query).select('startedBy invitees participants status');
+  if (!session) return null;
+  return ids.find((id) =>
+    String(session.startedBy) === id ||
+    session.invitees.some((item) => String(item) === id) ||
+    session.participants.some((item) => String(item.user) === id && !item.leftAt)
+  ) || ids[0];
+}
+
+router.get('/ice-servers', (req, res) => {
+  const servers = [];
+  if (env.stunUrls.length) servers.push({ urls: env.stunUrls });
+  if (env.turnUrls.length) {
+    servers.push({ urls: env.turnUrls, username: env.turnUsername, credential: env.turnCredential });
+  }
+
+  // Không để WebRTC chạy với danh sách ICE rỗng. Khi chưa cấu hình TURN,
+  // STUN fallback giúp web-web/app-web trong cùng mạng hoặc NAT nhẹ kết nối ổn hơn.
+  // Với 4G/NAT chặt vẫn cần TURN trong .env: TURN_URLS/TURN_USERNAME/TURN_CREDENTIAL.
+  if (!servers.length) {
+    servers.push({ urls: ['stun:stun.l.google.com:19302', 'stun:global.stun.twilio.com:3478'] });
+  }
+
+  res.json(servers);
+});
+
+router.get('/history', asyncHandler(async (req, res) => {
+  await expireStaleCalls(req.app.get('io'));
+  const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+  const limit = Math.min(50, Math.max(5, Number.parseInt(req.query.limit, 10) || 20));
+  const status = String(req.query.status || '').trim();
+  const query = {
+    $or: [
+      { startedBy: req.user._id },
+      { invitees: req.user._id },
+      { 'participants.user': req.user._id }
+    ],
+    ...(status ? { status } : {})
+  };
+  const [items, total] = await Promise.all([
+    CallSession.find(query)
+      .sort({ startedAt: -1, _id: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .populate('startedBy', 'displayName avatar phone')
+      .populate('invitees', 'displayName avatar phone')
+      .populate('endedBy', 'displayName avatar phone')
+      .populate({
+        path: 'conversation',
+        select: 'name type avatar members',
+        populate: { path: 'members.user', select: 'displayName avatar phone' }
+      }),
+    CallSession.countDocuments(query)
+  ]);
+  res.json({
+    items,
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+      hasPrevious: page > 1,
+      hasNext: page * limit < total
+    }
+  });
+}));
+
+
+router.get('/:id', asyncHandler(async (req, res) => {
+  const session = await CallSession.findById(req.params.id)
+    .select('_id conversation startedBy invitees participants mode status startedAt answeredAt endedAt endedBy updatedAt');
+  if (!session) return res.status(404).json({ message: 'Không tìm thấy cuộc gọi.' });
+  await ensureMember(session.conversation, req.user._id);
+  res.json(session);
+}));
+
+router.post('/', asyncHandler(async (req, res) => {
+  const conversation = await ensureMember(req.body.conversationId, req.user._id);
+  const invitees = conversation.members
+    .map((member) => String(member.user))
+    .filter((id) => id !== String(req.user._id));
+
+  await expireStaleCalls(req.app.get('io'));
+
+  if (conversation.type === 'direct' || conversation.type === 'official') {
+    const busyUserId = await findBusyUser(invitees);
+    if (busyUserId) {
+      const busySession = await CallSession.create({
+        conversation: conversation._id,
+        startedBy: req.user._id,
+        mode: req.body.mode || 'video',
+        invitees,
+        participants: [{ user: req.user._id, joinedAt: new Date(), leftAt: new Date() }],
+        status: 'busy',
+        endedAt: new Date(),
+        expiresAt: new Date()
+      });
+      await finalizeCall({ io: req.app.get('io'), session: busySession, status: 'busy', endedBy: busyUserId });
+      return res.status(409).json({
+        code: 'USER_BUSY',
+        message: 'Người nhận đang bận trong một cuộc gọi khác.',
+        busyUserId,
+        callSessionId: busySession._id
+      });
+    }
+  }
+
+  const ownBusy = await findBusyUser([req.user._id]);
+  if (ownBusy) return res.status(409).json({ code: 'CALLER_BUSY', message: 'Bạn đang ở trong một cuộc gọi khác.' });
+
+  const session = await CallSession.create({
+    conversation: conversation._id,
+    startedBy: req.user._id,
+    mode: req.body.mode || 'video',
+    invitees,
+    expiresAt: new Date(Date.now() + RINGING_TTL_MS),
+    participants: [{ user: req.user._id, joinedAt: new Date() }]
+  });
+  res.status(201).json(session);
+}));
+
+router.post('/:id/accept', asyncHandler(async (req, res) => {
+  const session = await CallSession.findById(req.params.id);
+  if (!session) return res.status(404).json({ message: 'Không tìm thấy cuộc gọi.' });
+  await ensureMember(session.conversation, req.user._id);
+  if (!ACTIVE_CALL_STATUSES.includes(session.status)) return res.status(409).json({ message: 'Cuộc gọi đã kết thúc.' });
+
+  const busyUserId = await findBusyUser([req.user._id], session._id);
+  if (busyUserId) return res.status(409).json({ code: 'USER_BUSY', message: 'Bạn đang bận trong một cuộc gọi khác.' });
+
+  session.status = 'active';
+  session.answeredAt ||= new Date();
+  if (!session.participants.some((item) => String(item.user) === String(req.user._id) && !item.leftAt)) {
+    session.participants.push({ user: req.user._id, joinedAt: new Date() });
+  }
+  await session.save();
+  res.json(session);
+}));
+
+router.post('/:id/decline', asyncHandler(async (req, res) => {
+  const session = await CallSession.findById(req.params.id);
+  if (!session) return res.status(404).json({ message: 'Không tìm thấy cuộc gọi.' });
+  await ensureMember(session.conversation, req.user._id);
+  const finalized = await finalizeCall({
+    io: req.app.get('io'),
+    session,
+    status: session.status === 'ringing' ? 'declined' : 'ended',
+    endedBy: req.user._id
+  });
+  res.json(finalized);
+}));
+
+router.post('/:id/end', asyncHandler(async (req, res) => {
+  const session = await CallSession.findById(req.params.id);
+  if (!session) return res.status(404).json({ message: 'Không tìm thấy cuộc gọi.' });
+  await ensureMember(session.conversation, req.user._id);
+  const finalized = await finalizeCall({
+    io: req.app.get('io'),
+    session,
+    status: session.status === 'ringing' ? 'missed' : 'ended',
+    endedBy: req.user._id
+  });
+  res.json(finalized);
+}));
+
+export default router;
