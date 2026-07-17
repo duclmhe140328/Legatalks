@@ -3473,3 +3473,90 @@ body,
     height: 36px !important;
   }
 }
+/* =========================================================
+   FIX KÍCH THƯỚC AVATAR VÀ ẢNH BÀI VIẾT
+========================================================= */
+
+/* Avatar đầu bài viết luôn tròn, không bị kéo ngang */
+.post-card > header {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+}
+
+.post-card > header .avatar,
+.post-card > header .avatar-fallback,
+.post-card > header img.avatar,
+.post-card > header > img:first-child {
+  width: 44px !important;
+  height: 44px !important;
+  min-width: 44px !important;
+  max-width: 44px !important;
+  min-height: 44px !important;
+  max-height: 44px !important;
+  flex: 0 0 44px !important;
+  aspect-ratio: 1 / 1 !important;
+  border-radius: 50% !important;
+  object-fit: cover !important;
+  overflow: hidden !important;
+}
+
+/* Khung ảnh bài đăng */
+.post-card .post-media {
+  width: 100% !important;
+  max-height: 480px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  overflow: hidden !important;
+  background: #000 !important;
+}
+
+/* Chỉ giới hạn ảnh, không làm ảnh bị crop */
+.post-card .post-media img,
+.post-card img.post-media-image {
+  display: block !important;
+  width: auto !important;
+  height: auto !important;
+  max-width: 100% !important;
+  max-height: 480px !important;
+  margin: 0 auto !important;
+  object-fit: contain !important;
+  object-position: center !important;
+  transform: none !important;
+}
+
+/* Video giữ đầy chiều rộng nhưng không vượt quá khung */
+.post-card .post-media video,
+.post-card video.post-media-video {
+  display: block !important;
+  width: 100% !important;
+  height: auto !important;
+  max-height: 620px !important;
+  object-fit: contain !important;
+  background: #000 !important;
+}
+
+@media (max-width: 768px) {
+  .post-card .post-media {
+    max-height: 56vh !important;
+  }
+
+  .post-card .post-media img,
+  .post-card img.post-media-image {
+    max-height: 56vh !important;
+  }
+
+  .post-card > header .avatar,
+  .post-card > header .avatar-fallback,
+  .post-card > header img.avatar,
+  .post-card > header > img:first-child {
+    width: 40px !important;
+    height: 40px !important;
+    min-width: 40px !important;
+    max-width: 40px !important;
+    min-height: 40px !important;
+    max-height: 40px !important;
+    flex-basis: 40px !important;
+  }
+}

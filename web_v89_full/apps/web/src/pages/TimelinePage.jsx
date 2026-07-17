@@ -13,7 +13,39 @@ import { useSocket } from '../context/SocketContext';
 import Avatar from '../components/Avatar';
 import { EmbeddedVideo, extractVideoEmbed, removeEmbeddedUrl } from '../services/videoEmbeds';
 import LivePanel from '../components/LivePanel';
+function normalizeUploadedMedia(raw = {}) {
+  const mimeType = String(
+    raw?.mimeType ||
+    raw?.contentType ||
+    '',
+  );
 
+  const url = String(
+    raw?.url ||
+    raw?.fileUrl ||
+    raw?.path ||
+    '',
+  );
+
+  let type = String(raw?.type || '');
+
+  if (type !== 'image' && type !== 'video') {
+    type = mimeType.startsWith('video/')
+      ? 'video'
+      : 'image';
+  }
+
+  return {
+    ...raw,
+    url,
+    thumbUrl:
+      raw?.thumbUrl ||
+      raw?.thumbnailUrl ||
+      url,
+    mimeType,
+    type,
+  };
+}
 const originalPost = (post) => post?.repostOf || post;
 const emojiChoices = ['😀', '😂', '😍', '🥰', '😮', '😢', '😡', '👍', '❤️', '🔥', '🎉', '🙏'];
 const stickerChoices = ['👋', '🎉', '💯', '🚀', '🤣', '🥳', '❤️‍🔥', '👏'];
@@ -171,7 +203,7 @@ export default function TimelinePage() {
     try {
       const form = new FormData();
       form.append('file', file);
-      const item = (await api.post('/uploads', form, { headers: { 'Content-Type': 'multipart/form-data' } })).data;
+      const item = (await api.post('/uploads', form)).data;
       setMedia((list) => [...list, { url: item.url, thumbUrl: item.thumbUrl, type: file.type.startsWith('video/') ? 'video' : 'image' }]);
     } catch (error) {
       setStatus(errorMessage(error));
@@ -294,12 +326,29 @@ function StoriesBar({ user }) {
   }, [active?._id]);
 
   const uploadStoryMedia = async (file) => {
-    try {
-      const form = new FormData(); form.append('file', file);
-      const item = (await api.post('/uploads', form, { headers: { 'Content-Type': 'multipart/form-data' } })).data;
-      setMedia({ url: item.url, thumbUrl: item.thumbUrl, mimeType: item.mimeType, type: file.type.startsWith('video/') ? 'video' : 'image' });
-    } catch (uploadError) { setError(errorMessage(uploadError)); }
-  };
+  setBusy(true);
+  setError('');
+
+  try {
+    const form = new FormData();
+    form.append('file', file);
+
+    const response = await api.post('/uploads', form);
+    const item = normalizeUploadedMedia(response.data);
+
+    if (!item.url) {
+      throw new Error(
+        'Server upload thành công nhưng không trả về URL ảnh.',
+      );
+    }
+
+    setMedia(item);
+  } catch (uploadError) {
+    setError(errorMessage(uploadError));
+  } finally {
+    setBusy(false);
+  }
+};
 
   const createStory = async () => {
     if (!text.trim() && !media) return;
@@ -456,7 +505,7 @@ function CommunityGroupsPanel({ user }) {
 
   const uploadGroupMedia = async (file) => {
     const form = new FormData(); form.append('file', file);
-    const item = (await api.post('/uploads', form, { headers: { 'Content-Type': 'multipart/form-data' } })).data;
+    const item = (await api.post('/uploads', form)).data;
     setPostMedia([{ url: item.url, thumbUrl: item.thumbUrl, type: file.type.startsWith('video/') ? 'video' : 'image' }]);
   };
 
@@ -659,7 +708,7 @@ function CommentsSection({ comments, user, onSubmit, inputId, compact = false })
     setBusy(true); setError('');
     try {
       const form = new FormData(); form.append('file', file);
-      const item = (await api.post('/uploads', form, { headers: { 'Content-Type': 'multipart/form-data' } })).data;
+      const item = (await api.post('/uploads', form)).data;
       setAttachment({ kind, media: [item] });
     } catch (uploadError) { setError(errorMessage(uploadError)); }
     finally { setBusy(false); }

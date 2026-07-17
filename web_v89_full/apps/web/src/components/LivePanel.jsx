@@ -267,12 +267,12 @@ export default function LivePanel() {
     try {
       const res = await api.get(`/live/${streamId}/broadcast-join?role=${currentRole}`);
       const url = publicBroadcastUrl(res.data?.joinUrl || res.data?.join || '');
-      if (!url) throw new Error('Không lấy được link MiroTalk Broadcast.');
+      if (!url) throw new Error('Không lấy được link LEGATALK Broadcast.');
 
       setJoinCache((prev) => (prev[cacheKey] ? prev : { ...prev, [cacheKey]: url }));
       return url;
     } catch (err) {
-      setError(err?.response?.data?.message || err?.message || 'Không mở được MiroTalk Broadcast.');
+      setError(err?.response?.data?.message || err?.message || 'Không mở được LEGATALK Broadcast.');
       return '';
     } finally {
       setJoinLoading(false);
@@ -414,7 +414,7 @@ export default function LivePanel() {
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, marginBottom: 16 }}>
         <div>
-          <div style={{ color: '#ef4444', fontWeight: 900, letterSpacing: '.08em', fontSize: 12 }}>NEXORA LIVE · MIROTALK BROADCAST</div>
+          <div style={{ color: '#ef4444', fontWeight: 900, letterSpacing: '.08em', fontSize: 12 }}>LEGATALK LIVE · LEGATALK BROADCAST</div>
           <h1 style={{ margin: '2px 0 0', color: '#0f172a', fontSize: 32, lineHeight: 1.05 }}>Livestream Broadcast</h1>
           <div style={{ color: '#64748b', fontWeight: 700 }}>Host phát live, tài khoản khác thấy link live bên dưới và bấm vào là viewer.</div>
         </div>
@@ -555,7 +555,7 @@ export default function LivePanel() {
                   />
                 ) : (
                   <div style={{ color: 'white', display: 'grid', placeItems: 'center', height: '100%', textAlign: 'center', padding: 20 }}>
-                    Không lấy được link MiroTalk BRO. Kiểm tra MIROTALK_BRO_PUBLIC_URL / MIROTALK_BRO_API_KEY ở backend.
+                    Không lấy được link LEGATALK BRO. 
                   </div>
                 )}
               </div>

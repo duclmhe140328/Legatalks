@@ -54,11 +54,19 @@ export const uploader = multer({
 export async function processUpload(file) {
   const publicPath = `/uploads/${file.filename}`;
   const base = {
-    url: `${env.publicServerUrl}${publicPath}`,
-    name: file.originalname,
-    mimeType: file.mimetype,
-    size: file.size
-  };
+  url: `${env.publicServerUrl}${publicPath}`,
+  name: file.originalname,
+  mimeType: file.mimetype,
+  size: file.size,
+
+  type: file.mimetype.startsWith('video/')
+    ? 'video'
+    : file.mimetype.startsWith('image/')
+      ? 'image'
+      : file.mimetype.startsWith('audio/')
+        ? 'audio'
+        : 'file',
+};
 
   if (!file.mimetype.startsWith('image/')) return base;
 

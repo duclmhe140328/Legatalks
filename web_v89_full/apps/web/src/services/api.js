@@ -22,7 +22,6 @@ export const api = axios.create({
   timeout: 30_000,
   headers: {
     Accept: 'application/json',
-    'Content-Type': 'application/json',
   },
 });
 
@@ -65,10 +64,26 @@ function clearStoredSession() {
 }
 
 api.interceptors.request.use((config) => {
+  config.headers = config.headers || {};
+
+  const isFormData =
+    typeof FormData !== 'undefined' &&
+    config.data instanceof FormData;
+
   /*
-   * Không gắn access token cũ vào login/register/refresh.
-   * Các endpoint này phải hoạt động độc lập với phiên cũ.
+   * Không tự đặt Content-Type cho FormData.
+   * Trình duyệt phải tự thêm multipart boundary.
    */
+  if (isFormData) {
+    if (typeof config.headers.delete === 'function') {
+      config.headers.delete('Content-Type');
+    } else {
+      delete config.headers['Content-Type'];
+      delete config.headers['content-type'];
+    }
+  }
+
+
   if (isPublicAuthRequest(config)) {
     if (config.headers) {
       delete config.headers.Authorization;
