@@ -21,12 +21,25 @@ export function AuthProvider({ children }) {
     }).finally(() => setLoading(false));
   }, []);
 
-  const logout = async () => {
-    try { await api.post('/auth/logout'); } catch { /* ignore */ }
+  async function logout() {
+  try {
+    const token = localStorage.getItem('accessToken');
+
+    if (token) {
+      await api.post('/auth/logout');
+    }
+  } catch (error) {
+    console.warn('Logout API failed:', error?.response?.data || error);
+  } finally {
     localStorage.removeItem('accessToken');
     localStorage.removeItem('refreshToken');
-    setUser(null);
-  };
+    localStorage.removeItem('user');
+    localStorage.removeItem('token');
+    localStorage.removeItem('jwt');
+
+    window.location.replace('/login');
+  }
+}
 
   const refreshMe = async () => {
     const { data } = await api.get('/users/me');

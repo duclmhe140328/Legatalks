@@ -18,7 +18,25 @@ import { hashToken, verifyRefreshToken, createAccessToken, createRefreshToken } 
 import { createSession } from '../services/session.js';
 import { sendOtpSms } from '../services/sms.js';
 import { sendOtpEmail } from '../services/email.js';
+function phoneCandidates(value) {
+  const digits = String(value || '')
+    .trim()
+    .replace(/\D/g, '');
 
+  if (!digits) return [];
+
+  const candidates = [digits];
+
+  if (digits.startsWith('0')) {
+    candidates.push(`84${digits.slice(1)}`);
+  }
+
+  if (digits.startsWith('84')) {
+    candidates.push(`0${digits.slice(2)}`);
+  }
+
+  return [...new Set(candidates)];
+}
 const router = express.Router();
 const otpLimiter = rateLimit({ windowMs: 60_000, limit: 5, standardHeaders: true, legacyHeaders: false });
 
@@ -187,15 +205,42 @@ router.post('/register', asyncHandler(async (req, res) => {
   res.status(201).json(result);
 }));
 
-router.post('/login/password', asyncHandler(async (req, res) => {
-  const phone = normalizePhone(req.body.phone);
-  const user = await User.findOne({ phone }).select('+passwordHash');
-  if (!user?.passwordHash || !(await bcrypt.compare(req.body.password || '', user.passwordHash))) {
-    return res.status(401).json({ message: 'Số điện thoại hoặc mật khẩu không đúng.' });
-  }
-  const result = await createSession(user, req, req.body.device || {});
-  res.json(result);
-}));
+router.post(
+  '/login/password',
+  asyncHandler(async (req, res) => {
+    const phones = phoneCandidates(req.body.phone);
+    const password = String(req.body.password || '');
+
+    if (!phones.length || !password) {
+      return res.status(400).json({
+        message: 'Vui lòng nhập số điện thoại và mật khẩu.',
+      });
+    }
+
+    const user = await User.findOne({
+      phone: { $in: phones },
+      isActive: { $ne: false },
+    }).select('+passwordHash');
+
+    const passwordCorrect =
+      Boolean(user?.passwordHash) &&
+      await bcrypt.compare(password, user.passwordHash);
+
+    if (!user || !passwordCorrect) {
+      return res.status(401).json({
+        message: 'Số điện thoại hoặc mật khẩu không đúng.',
+      });
+    }
+
+    const result = await createSession(
+      user,
+      req,
+      req.body.device || {},
+    );
+
+    return res.json(result);
+  }),
+);
 
 router.post('/login/otp', asyncHandler(async (req, res) => {
   const phone = normalizePhone(req.body.phone);

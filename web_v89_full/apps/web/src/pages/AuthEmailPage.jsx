@@ -398,16 +398,15 @@ export default function AuthEmailPage({ initialMode = 'login' }) {
   const [message, setMessage] = useState('');
 
   const [form, setForm] = useState({
-    phone: '',
-    email: '',
-    displayName: '',
-    password: '',
-    confirmPassword: '',
-    otp: '',
-    resetPhone: '',
-    resetEmail: '',
-    newPassword: '',
-  });
+  phone: '',
+  email: '',
+  displayName: '',
+  password: '',
+  confirmPassword: '',
+  otp: '',
+  account: '',
+  newPassword: '',
+});
 
   useEffect(() => {
     setMode(initialMode || 'login');

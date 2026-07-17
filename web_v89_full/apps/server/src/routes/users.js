@@ -13,7 +13,30 @@ const publicFields = 'displayName username avatar cover bio accountType official
 const publicFieldsWithPhone = publicFields;
 const isFriendWith = (user, targetId) => user.friends.some((id) => String(id) === String(targetId));
 const hashPhone = (phone) => crypto.createHash('sha256').update(phone).digest('hex');
+function escapeRegex(value) {
+  return String(value || '')
+    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
+function phoneCandidates(value) {
+  const digits = String(value || '')
+    .trim()
+    .replace(/\D/g, '');
+
+  if (!digits) return [];
+
+  const phones = [digits];
+
+  if (digits.startsWith('0')) {
+    phones.push(`84${digits.slice(1)}`);
+  }
+
+  if (digits.startsWith('84')) {
+    phones.push(`0${digits.slice(2)}`);
+  }
+
+  return [...new Set(phones)];
+}
 router.get('/me', asyncHandler(async (req, res) => {
   await req.user.populate([
     { path: 'friends', select: publicFieldsWithPhone },
@@ -38,24 +61,105 @@ router.patch('/me', asyncHandler(async (req, res) => {
   res.json(req.user.toSafeJSON());
 }));
 
-router.get('/search', asyncHandler(async (req, res) => {
-  const q = String(req.query.q || '').trim();
-  if (!q) return res.json([]);
-  const normalized = normalizePhone(q);
-  const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-  const conditions = [{ displayName: regex }, { username: regex }];
-  if (normalized) conditions.push({ phone: normalized, 'settings.discoverableByPhone': { $ne: false } });
-  const users = await User.find({
-    _id: { $nin: [req.user._id, ...req.user.blockedUsers] },
-    $or: conditions
-  }).select(`${publicFields} phone settings.discoverableByPhone`).limit(30);
-  res.json(users.map((item) => {
-    const value = item.toObject();
-    if (!isFriendWith(req.user, item._id) && item.settings?.discoverableByPhone === false) delete value.phone;
-    delete value.settings;
-    return value;
-  }));
-}));
+router.get(
+  '/search',
+  asyncHandler(async (req, res) => {
+    const keyword = String(
+      req.query.q ||
+      req.query.query ||
+      req.query.search ||
+      '',
+    ).trim();
+
+    if (!keyword) {
+      return res.json([]);
+    }
+
+    const regex = new RegExp(
+      escapeRegex(keyword),
+      'i',
+    );
+
+    const conditions = [
+      { displayName: regex },
+      { username: regex },
+    ];
+
+    const digits = keyword.replace(/\D/g, '');
+
+    if (digits.length >= 8) {
+      const phones = phoneCandidates(keyword);
+
+      conditions.push({
+        $and: [
+          {
+            phone: {
+              $in: phones,
+            },
+          },
+          {
+            $or: [
+              {
+                'settings.discoverableByPhone': {
+                  $ne: false,
+                },
+              },
+              {
+                _id: {
+                  $in: req.user.friends || [],
+                },
+              },
+            ],
+          },
+        ],
+      });
+    }
+
+    const excludedIds = [
+      req.user._id,
+      ...(req.user.blockedUsers || []),
+    ];
+
+    const users = await User.find({
+      _id: {
+        $nin: excludedIds,
+      },
+      blockedUsers: {
+        $ne: req.user._id,
+      },
+      isActive: {
+        $ne: false,
+      },
+      $or: conditions,
+    })
+      .select(
+        `${publicFields} phone settings.discoverableByPhone`,
+      )
+      .limit(20);
+
+    const values = users.map((item) => {
+      const value = item.toObject();
+
+      const isFriend = isFriendWith(
+        req.user,
+        item._id,
+      );
+
+      if (
+        !isFriend &&
+        item.settings?.discoverableByPhone === false
+      ) {
+        delete value.phone;
+      }
+
+      delete value.settings;
+
+      return value;
+    });
+
+    return res.json(values);
+  }),
+);
 
 router.post('/contacts/sync', asyncHandler(async (req, res) => {
   const phones = [...new Set((req.body.phones || []).map((p) => normalizePhone(p)).filter(Boolean))].slice(0, 5000);
