@@ -9,6 +9,7 @@ import { verifyAccessToken } from '../utils/tokens.js';
 import { createMessage } from '../services/messageService.js';
 import { createNotification } from '../services/notifications.js';
 import { expireStaleCalls, finalizeCall, TERMINAL_CALL_STATUSES } from '../services/callLifecycle.js';
+import { cancelIncomingCallPush, dispatchIncomingCall } from '../services/incomingCalls.js';
 
 const callRoom = (callSessionId) => `call:${callSessionId}`;
 const callSessionRoom = (callSessionId) => `call-session:${callSessionId}`;
@@ -200,32 +201,16 @@ export function configureSockets(io) {
       try {
         const session = await CallSession.findOne({ _id: callSessionId, startedBy: userId, status: 'ringing' });
         if (!session) return ack?.({ ok: false, message: 'Cuộc gọi không hợp lệ hoặc đã kết thúc.' });
-        const conversation = await Conversation.findById(session.conversation)
-          .populate('members.user', 'displayName avatar accountType verified');
-        if (!conversation) return ack?.({ ok: false, message: 'Không tìm thấy cuộc trò chuyện.' });
 
         socket.join(callSessionRoom(session._id));
         socket.data.callSessionIds.add(String(session._id));
-        const payload = {
-          conversationId: conversation._id,
-          conversation,
-          mode: session.mode,
-          callSessionId: session._id,
-          from: { id: userId, displayName: socket.user.displayName, avatar: socket.user.avatar }
-        };
 
-        for (const invitee of session.invitees) {
-          io.to(`user:${invitee}`).emit('call:incoming', payload);
-          await createNotification(io, {
-            recipient: invitee,
-            actor: socket.user._id,
-            type: 'incoming_call',
-            title: session.mode === 'video' ? 'Cuộc gọi video đến' : 'Cuộc gọi thoại đến',
-            body: `${socket.user.displayName} đang gọi cho bạn.`,
-            data: { callSessionId: session._id, conversationId: conversation._id, mode: session.mode }
-          });
-        }
-        ack?.({ ok: true });
+        const result = await dispatchIncomingCall({
+          io,
+          callSessionId: session._id,
+          caller: socket.user
+        });
+        ack?.({ ok: true, duplicate: Boolean(result?.duplicate) });
       } catch (error) {
         ack?.({ ok: false, message: error.message });
       }
@@ -260,6 +245,8 @@ export function configureSockets(io) {
           session.participants.push({ user: userId, joinedAt: new Date() });
         }
         await session.save();
+        cancelIncomingCallPush({ session, userIds: [userId], status: 'active' })
+          .catch((error) => console.error('Cancel incoming call push error:', error.message));
         socket.join(callSessionRoom(session._id));
         socket.data.callSessionIds.add(String(session._id));
         io.to(`user:${session.startedBy}`).emit('call:accepted', { callSessionId: session._id, userId, displayName: socket.user.displayName });

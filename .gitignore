@@ -1,0 +1,7 @@
+
+# Ignore local installers and patch backups
+*.exe
+*.zip
+patch_backups/
+web_v89_full/patch_backups/
+web_v89_full/web_incoming_call_sync_push_patch_2026-07-18/

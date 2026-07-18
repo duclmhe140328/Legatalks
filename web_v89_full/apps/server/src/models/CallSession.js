@@ -15,6 +15,7 @@ const callSessionSchema = new mongoose.Schema({
   endedAt: Date,
   endedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   expiresAt: Date,
+  inviteNotifiedAt: Date,
   status: { type: String, enum: ['ringing', 'active', 'ended', 'missed', 'declined', 'busy'], default: 'ringing' },
   terminalNotifiedAt: Date
 }, { timestamps: true });

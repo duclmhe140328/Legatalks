@@ -23,7 +23,9 @@ function notificationPayload(notification) {
   );
 
   if (!data.path) {
-    if (data.conversationId) data.path = '/chats';
+    if (String(notification.type || data.type || '') === 'incoming_call' && data.callSessionId) {
+      data.path = `/chats?incomingCall=${encodeURIComponent(data.callSessionId)}`;
+    } else if (data.conversationId) data.path = '/chats';
     else if (data.meetingId) data.path = `/meetings/${data.meetingId}`;
     else if (data.postId) data.path = `/timeline?post=${data.postId}`;
     else data.path = '/notifications';
@@ -55,14 +57,15 @@ async function sendExpoPush(tokens, notification) {
       body: payload.body,
       data: payload.data,
       priority: 'high',
-      channelId: 'default'
+      channelId: payload.data.type === 'incoming_call' ? 'nexora_calls_v2' : 'default',
+      ttl: payload.data.type === 'incoming_call' ? 60 : undefined
     })))
   }).then(async (response) => {
     if (!response.ok) throw new Error(`Expo Push ${response.status}: ${await response.text()}`);
   })));
 }
 
-async function sendFcm(tokens, notification) {
+async function sendFcm(tokens, notification, platform = 'android') {
   const fcmTokens = tokens.filter((token) => !/^Expo(nent)?PushToken\[/i.test(String(token || '')));
   if (!fcmTokens.length || !process.env.FCM_SERVICE_ACCOUNT_JSON) return;
   const raw = process.env.FCM_SERVICE_ACCOUNT_JSON.trim();
@@ -74,16 +77,63 @@ async function sendFcm(tokens, notification) {
   });
   const { token } = await auth.getAccessToken();
   const payload = notificationPayload(notification);
-  await Promise.allSettled(fcmTokens.map((deviceToken) => fetch(
-    `https://fcm.googleapis.com/v1/projects/${serviceAccount.project_id}/messages:send`,
-    {
+  const type = String(payload.data.type || '');
+  const isIncomingCall = type === 'incoming_call';
+  const isCallControl = type === 'call_terminal' || type === 'call_cancel';
+  const callKey = String(payload.data.callSessionId || 'call');
+
+  await Promise.allSettled(fcmTokens.map((deviceToken) => {
+    const data = {
+      ...payload.data,
+      title: String(payload.title || ''),
+      body: String(payload.body || '')
+    };
+    const message = { token: deviceToken, data };
+
+    if (platform === 'ios') {
+      message.apns = {
+        headers: {
+          'apns-priority': isCallControl ? '5' : '10',
+          'apns-push-type': isCallControl ? 'background' : 'alert',
+          'apns-collapse-id': `call-${callKey}`
+        },
+        payload: {
+          aps: {
+            'content-available': 1,
+            ...(!isCallControl ? { sound: 'default' } : {}),
+            ...(isIncomingCall ? { 'interruption-level': 'time-sensitive' } : {})
+          }
+        }
+      };
+
+      // iOS để hệ điều hành tự hiện thông báo khi app đã đóng. Control push
+      // chỉ mang data để app đang chạy có thể đóng notification cũ.
+      if (!isCallControl) {
+        message.notification = { title: payload.title, body: payload.body };
+      }
+    } else {
+      message.android = {
+        priority: 'high',
+        ttl: isIncomingCall ? '60s' : (isCallControl ? '30s' : '3600s'),
+        collapse_key: `call-${callKey}`
+      };
+
+      // Android call dùng data-only để background isolate tự tạo notification
+      // dạng CALL/full-screen. Thông báo thường vẫn do hệ thống hiển thị.
+      if (!isIncomingCall && !isCallControl) {
+        message.notification = { title: payload.title, body: payload.body };
+        delete message.android.collapse_key;
+      }
+    }
+
+    return fetch(`https://fcm.googleapis.com/v1/projects/${serviceAccount.project_id}/messages:send`, {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ message: { token: deviceToken, notification: { title: payload.title, body: payload.body }, data: payload.data } })
-    }
-  ).then(async (response) => {
-    if (!response.ok) throw new Error(`FCM ${response.status}: ${await response.text()}`);
-  })));
+      body: JSON.stringify({ message })
+    }).then(async (response) => {
+      if (!response.ok) throw new Error(`FCM ${response.status}: ${await response.text()}`);
+    });
+  }));
 }
 
 function createApnsJwt() {
@@ -157,7 +207,8 @@ async function sendWebPush(userId, notification) {
         expirationTime: subscription.expirationTime || null,
         keys: subscription.keys
       }, body, {
-        TTL: 60 * 60,
+        TTL: payload.data.type === 'incoming_call' ? 65 :
+          (['call_terminal', 'call_cancel'].includes(payload.data.type) ? 30 : 60 * 60),
         urgency: 'high'
       });
     } catch (error) {
@@ -183,7 +234,10 @@ export async function sendPushToUser(userId, notification) {
 
   await Promise.allSettled([
     sendExpoPush(androidTokens, notification),
-    sendFcm(androidTokens, notification),
+    // FirebaseMessaging.getToken() trả FCM token trên cả Android lẫn iOS.
+    sendFcm(androidTokens, notification, 'android'),
+    sendFcm(iosTokens, notification, 'ios'),
+    // Fallback cho client iOS cũ từng đăng ký APNs device token gốc.
     sendApns(iosTokens, notification),
     sendWebPush(userId, notification)
   ]);

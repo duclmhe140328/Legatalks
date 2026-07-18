@@ -1,9 +1,10 @@
-﻿import express from 'express';
+import express from 'express';
 import CallSession from '../models/CallSession.js';
 import { requireAuth } from '../middleware/auth.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { env } from '../config/env.js';
 import { ensureMember } from '../services/messageService.js';
+import { cancelIncomingCallPush, dispatchIncomingCall } from '../services/incomingCalls.js';
 import {
   ACTIVE_CALL_STATUSES,
   RINGING_TTL_MS,
@@ -93,6 +94,49 @@ router.get('/history', asyncHandler(async (req, res) => {
 }));
 
 
+
+router.get('/pending', asyncHandler(async (req, res) => {
+  await expireStaleCalls(req.app.get('io'));
+
+  const session = await CallSession.findOne({
+    status: 'ringing',
+    invitees: req.user._id,
+    startedBy: { $ne: req.user._id },
+    $or: [
+      { expiresAt: { $gt: new Date() } },
+      { expiresAt: null, startedAt: { $gt: new Date(Date.now() - RINGING_TTL_MS) } }
+    ]
+  })
+    .sort({ startedAt: -1, _id: -1 })
+    .populate('startedBy', 'displayName avatar accountType verified')
+    .populate({
+      path: 'conversation',
+      select: 'name type avatar members',
+      populate: { path: 'members.user', select: 'displayName avatar accountType verified' }
+    });
+
+  if (!session) return res.json({ call: null });
+
+  const caller = session.startedBy;
+  res.json({
+    call: {
+      conversationId: session.conversation?._id || session.conversation,
+      conversation: session.conversation,
+      mode: session.mode,
+      callSessionId: session._id,
+      startedAt: session.startedAt,
+      expiresAt: session.expiresAt,
+      replayed: true,
+      from: {
+        id: caller?._id || caller,
+        _id: caller?._id || caller,
+        displayName: caller?.displayName || 'Người gọi',
+        avatar: caller?.avatar || ''
+      }
+    }
+  });
+}));
+
 router.get('/:id', asyncHandler(async (req, res) => {
   const session = await CallSession.findById(req.params.id)
     .select('_id conversation startedBy invitees participants mode status startedAt answeredAt endedAt endedBy updatedAt');
@@ -143,6 +187,20 @@ router.post('/', asyncHandler(async (req, res) => {
     expiresAt: new Date(Date.now() + RINGING_TTL_MS),
     participants: [{ user: req.user._id, joinedAt: new Date() }]
   });
+
+  // Dispatch ngay từ HTTP để người nhận vẫn được gọi/push khi socket của
+  // người gọi vừa reconnect hoặc chưa kịp emit call:invite. Nếu dịch vụ push
+  // lỗi tạm thời, vẫn trả session cho caller để socket call:invite retry.
+  try {
+    await dispatchIncomingCall({
+      io: req.app.get('io'),
+      callSessionId: session._id,
+      caller: req.user
+    });
+  } catch (error) {
+    console.error('Initial incoming call dispatch error:', error.message);
+  }
+
   res.status(201).json(session);
 }));
 
@@ -161,6 +219,8 @@ router.post('/:id/accept', asyncHandler(async (req, res) => {
     session.participants.push({ user: req.user._id, joinedAt: new Date() });
   }
   await session.save();
+  cancelIncomingCallPush({ session, userIds: [req.user._id], status: 'active' })
+    .catch((error) => console.error('Cancel incoming call push error:', error.message));
   res.json(session);
 }));
 

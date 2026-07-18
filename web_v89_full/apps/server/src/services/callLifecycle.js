@@ -2,6 +2,7 @@ import CallSession from '../models/CallSession.js';
 import Conversation from '../models/Conversation.js';
 import Message from '../models/Message.js';
 import { createNotification } from './notifications.js';
+import { cancelIncomingCallPush } from './incomingCalls.js';
 
 export const TERMINAL_CALL_STATUSES = ['ended', 'missed', 'declined', 'busy'];
 export const ACTIVE_CALL_STATUSES = ['ringing', 'active'];
@@ -241,6 +242,9 @@ export async function finalizeCall({ io, session: inputSession, status, endedBy 
   const callRooms = [callRoom(session._id), callSessionRoom(session._id), ...userRooms];
   io?.to(callRooms).emit('call:ended', payload);
   io?.to(callRooms).emit('call:terminal', payload);
+
+  cancelIncomingCallPush({ session, status: session.status })
+    .catch((error) => console.error('Cancel incoming call push error:', error.message));
 
   // Luôn phát event chat riêng từ CallSession. Client đang mở chat nhận ngay;
   // client mở sau sẽ lấy lại cùng event qua GET /messages/:conversationId.
