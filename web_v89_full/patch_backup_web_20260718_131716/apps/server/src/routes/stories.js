@@ -3,28 +3,16 @@ import Story from '../models/Story.js';
 import { requireAuth } from '../middleware/auth.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { createNotification } from '../services/notifications.js';
-import { hiddenUserIdsFor, usersAreBlocked } from '../utils/socialAccess.js';
 
 const router = express.Router();
 router.use(requireAuth);
 const authorFields = 'displayName avatar accountType verified';
-const populateStory = (query) => query.populate('author', authorFields).populate('viewers.user', authorFields).populate('reactions.user', authorFields).populate('replies.user', authorFields);
-
-async function canViewStory(story, viewer) {
-  if (!story || story.isDeleted || story.expiresAt <= new Date()) return false;
-  const authorId = story.author?._id || story.author;
-  if (String(authorId) === String(viewer._id)) return true;
-  if (await usersAreBlocked(viewer, authorId)) return false;
-  if (story.privacy === 'public') return true;
-  return story.privacy === 'friends' && (viewer.friends || []).some((id) => String(id) === String(authorId));
-}
+const populateStory = (query) => query.populate('author', authorFields).populate('reactions.user', authorFields).populate('replies.user', authorFields);
 
 router.get('/', asyncHandler(async (req, res) => {
-  const hiddenAuthors = await hiddenUserIdsFor(req.user);
   const visibleAuthors = [...req.user.friends, req.user._id];
   const stories = await populateStory(Story.find({
     isDeleted: false, expiresAt: { $gt: new Date() },
-    author: { $nin: hiddenAuthors },
     $or: [{ privacy: 'public' }, { privacy: 'friends', author: { $in: visibleAuthors } }, { author: req.user._id }]
   }).sort({ createdAt: -1 }).limit(100));
   res.json(stories);
@@ -53,7 +41,10 @@ router.post('/:id/view', asyncHandler(async (req, res) => {
   if (!story) return res.status(404).json({ message: 'Không tìm thấy story.' });
 
   const isOwner = String(story.author) === String(req.user._id);
-  if (!(await canViewStory(story, req.user))) return res.status(403).json({ message: 'Bạn không có quyền xem story này.' });
+  const isFriend = (req.user.friends || []).some((id) => String(id) === String(story.author));
+  const canView = isOwner || story.privacy === 'public' || (story.privacy === 'friends' && isFriend);
+
+  if (!canView) return res.status(403).json({ message: 'Bạn không có quyền xem story này.' });
 
   if (!isOwner) {
     await Story.updateOne(
@@ -67,7 +58,7 @@ router.post('/:id/view', asyncHandler(async (req, res) => {
 
 router.post('/:id/react', asyncHandler(async (req, res) => {
   const story = await Story.findOne({ _id: req.params.id, isDeleted: false, expiresAt: { $gt: new Date() } });
-  if (!story || !(await canViewStory(story, req.user))) return res.status(404).json({ message: 'Không tìm thấy story.' });
+  if (!story) return res.status(404).json({ message: 'Không tìm thấy story.' });
   const emoji = String(req.body.emoji || '👍').slice(0, 8);
   const old = story.reactions.find((item) => String(item.user) === String(req.user._id));
   if (old) old.emoji = emoji; else story.reactions.push({ user: req.user._id, emoji });
@@ -80,7 +71,7 @@ router.post('/:id/react', asyncHandler(async (req, res) => {
 
 router.post('/:id/replies', asyncHandler(async (req, res) => {
   const story = await Story.findOne({ _id: req.params.id, isDeleted: false, expiresAt: { $gt: new Date() } });
-  if (!story || !(await canViewStory(story, req.user))) return res.status(404).json({ message: 'Không tìm thấy story.' });
+  if (!story) return res.status(404).json({ message: 'Không tìm thấy story.' });
   const text = String(req.body.text || '').trim();
   if (!text) return res.status(400).json({ message: 'Nội dung trả lời trống.' });
   story.replies.push({ user: req.user._id, text });

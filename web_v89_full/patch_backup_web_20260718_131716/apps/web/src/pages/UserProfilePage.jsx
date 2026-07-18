@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Ban, MessageCircle, MoreHorizontal, Phone, UserCheck, UserMinus, UserPlus } from 'lucide-react';
+import { ArrowLeft, MessageCircle, Phone, UserCheck, UserPlus } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api, errorMessage } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -13,7 +13,6 @@ export default function UserProfilePage() {
   const [profile, setProfile] = useState(null);
   const [posts, setPosts] = useState([]);
   const [status, setStatus] = useState('');
-  const [menuOpen, setMenuOpen] = useState(false);
 
   const load = async () => {
     try {
@@ -35,26 +34,6 @@ export default function UserProfilePage() {
     try {
       setStatus((await api.post(`/users/friends/request/${userId}`)).data.message);
       await load();
-    } catch (error) {
-      setStatus(errorMessage(error));
-    }
-  };
-
-  const unfriend = async () => {
-    try {
-      setStatus((await api.delete(`/users/friends/${userId}`)).data.message);
-      setMenuOpen(false);
-      await load();
-    } catch (error) {
-      setStatus(errorMessage(error));
-    }
-  };
-
-  const blockUser = async () => {
-    if (!window.confirm(`Chặn ${profile?.displayName || 'người dùng này'}? Hai bên sẽ không thể xem hồ sơ, bài viết và story của nhau.`)) return;
-    try {
-      await api.post(`/users/block/${userId}`);
-      navigate('/timeline', { replace: true });
     } catch (error) {
       setStatus(errorMessage(error));
     }
@@ -101,15 +80,8 @@ export default function UserProfilePage() {
         <div className="public-profile-actions">
           <button className="primary-small" onClick={openChat}><MessageCircle /> Nhắn tin</button>
           {!profile.relationship?.isFriend && !profile.relationship?.outgoing && <button className="secondary-btn" onClick={requestFriend}><UserPlus /> Kết bạn</button>}
-          {profile.relationship?.isFriend && <button className="friend-state" onClick={unfriend} title="Hủy kết bạn"><UserCheck /> Bạn bè</button>}
+          {profile.relationship?.isFriend && <button className="friend-state" disabled><UserCheck /> Bạn bè</button>}
           {profile.relationship?.outgoing && <button className="friend-state" disabled><Phone /> Đã gửi lời mời</button>}
-          <div className="public-profile-more">
-            <button className="secondary-btn" onClick={() => setMenuOpen((value) => !value)} aria-label="Tùy chọn hồ sơ"><MoreHorizontal /></button>
-            {menuOpen && <div className="public-profile-more-menu">
-              {profile.relationship?.isFriend && <button onClick={unfriend}><UserMinus /> Hủy kết bạn</button>}
-              <button className="danger" onClick={blockUser}><Ban /> Chặn người dùng</button>
-            </div>}
-          </div>
         </div>
       </div>
       {status && <div className="form-status profile-public-status">{status}</div>}

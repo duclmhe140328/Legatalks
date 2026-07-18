@@ -1,0 +1,8 @@
+MODIFIED apps/server/src/models/Post.js
+MODIFIED apps/server/src/routes/posts.js
+MODIFIED apps/server/src/routes/stories.js
+ADDED    apps/server/src/utils/socialAccess.js
+MODIFIED apps/web/src/facebook-social-spec.css
+MODIFIED apps/web/src/pages/ProfilePage.jsx
+MODIFIED apps/web/src/pages/TimelinePage.jsx
+MODIFIED apps/web/src/pages/UserProfilePage.jsx

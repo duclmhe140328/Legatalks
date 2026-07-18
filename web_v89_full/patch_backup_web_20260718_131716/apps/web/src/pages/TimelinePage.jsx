@@ -305,7 +305,6 @@ function StoriesBar({ user }) {
   const [media, setMedia] = useState(null);
   const [active, setActive] = useState(null);
   const [reply, setReply] = useState('');
-  const [privacy, setPrivacy] = useState('friends');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const fileRef = useRef(null);
@@ -354,7 +353,7 @@ function StoriesBar({ user }) {
   const createStory = async () => {
     if (!text.trim() && !media) return;
     try {
-      const { data } = await api.post('/stories', { text, media: media ? [media] : [], privacy });
+      const { data } = await api.post('/stories', { text, media: media ? [media] : [], privacy: 'friends' });
       setStories((list) => [data, ...list]);
       setText(''); setMedia(null); setError('');
     } catch (createError) { setError(errorMessage(createError)); }
@@ -408,11 +407,6 @@ function StoriesBar({ user }) {
       event.target.value = '';
     }}
   />
-
-  <select className="story-privacy" value={privacy} onChange={(event) => setPrivacy(event.target.value)} disabled={busy} aria-label="Quyền riêng tư story">
-    <option value="friends">Bạn bè</option>
-    <option value="public">Công khai</option>
-  </select>
 
   <button
     type="button"
@@ -697,7 +691,7 @@ export function PostCard({ post, user, onLike, onComment, onShare = () => { }, o
     {editing ? <div className="post-edit-box"><textarea value={draft} onChange={(event) => setDraft(event.target.value)} rows="4" /><div><button className="soft-btn" onClick={() => setEditing(false)}>Hủy</button><button className="primary-btn" onClick={saveEdit}>Lưu</button></div></div> : post.repostOf ? <><PostContent post={{ text: post.text }} /><RepostPreview post={post.repostOf} /></> : <PostContent post={post} />}
     <div className="post-counts"><span>{post.likes.length} lượt thích</span><span>{post.comments.length} bình luận · {source?.shareCount || 0} lượt chia sẻ</span></div>
     <div className="post-actions"><button className={liked ? 'liked' : ''} onClick={onLike}><Heart fill={liked ? 'currentColor' : 'none'} /> Thích</button><button onClick={() => document.getElementById(inputId)?.focus()}><MessageCircle /> Bình luận</button><button onClick={onShare}><Share2 /> Chia sẻ</button></div>
-    <CommentsSection postId={post._id} comments={post.comments || []} user={user} onSubmit={onComment} inputId={inputId} />
+    <CommentsSection comments={post.comments || []} user={user} onSubmit={onComment} inputId={inputId} />
   </article>;
 }
 
@@ -715,11 +709,11 @@ function VideoPost({ post, user, onLike, onComment, onShare }) {
       <div className="short-video-copy"><div className="short-author"><Avatar user={post.author} size={42} /><div><b>{post.author?.displayName}</b>{post.repostOf && <span><Repeat2 size={13} /> Đăng lại từ {source?.author?.displayName}</span>}</div></div>{displayText && <p>{displayText}</p>}</div>
       <div className="short-video-actions"><button className={liked ? 'liked' : ''} onClick={onLike}><Heart fill={liked ? 'currentColor' : 'none'} /><span>{post.likes.length}</span></button><button onClick={() => document.getElementById(inputId)?.focus()}><MessageCircle /><span>{post.comments.length}</span></button><button onClick={onShare}><Share2 /><span>{source?.shareCount || 0}</span></button></div>
     </div>
-    <CommentsSection postId={post._id} compact comments={post.comments || []} user={user} onSubmit={onComment} inputId={inputId} />
+    <CommentsSection compact comments={post.comments || []} user={user} onSubmit={onComment} inputId={inputId} />
   </article>;
 }
 
-function CommentsSection({ postId, comments, user, onSubmit, inputId, compact = false }) {
+function CommentsSection({ comments, user, onSubmit, inputId, compact = false }) {
   const [text, setText] = useState('');
   const [showAllComments, setShowAllComments] = useState(false);
   const [replyTo, setReplyTo] = useState(null);
@@ -728,24 +722,21 @@ function CommentsSection({ postId, comments, user, onSubmit, inputId, compact = 
   const [busy, setBusy] = useState(false);
   const [recording, setRecording] = useState(false);
   const [error, setError] = useState('');
-  const [localComments, setLocalComments] = useState(comments || []);
   const fileRef = useRef(null);
   const recorderRef = useRef(null);
 
-  useEffect(() => setLocalComments(comments || []), [comments]);
-
-  const commentById = useMemo(() => new Map((localComments || []).map((item) => [String(item._id), item])), [localComments]);
+  const commentById = useMemo(() => new Map((comments || []).map((item) => [String(item._id), item])), [comments]);
 
   const children = useMemo(() => {
     const map = new Map();
-    for (const item of localComments) {
+    for (const item of comments) {
       const parent = item.parentComment ? String(item.parentComment?._id || item.parentComment) : 'root';
       if (!map.has(parent)) map.set(parent, []);
       map.get(parent).push(item);
     }
     for (const list of map.values()) list.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
     return map;
-  }, [localComments]);
+  }, [comments]);
 
   const uploadAttachment = async (file, kind) => {
     setBusy(true); setError('');
@@ -790,8 +781,7 @@ function CommentsSection({ postId, comments, user, onSubmit, inputId, compact = 
     if (!payload.text && !(payload.media || []).length) return;
     setBusy(true); setError('');
     try {
-      const created = await onSubmit(payload);
-      if (created?._id) setLocalComments((list) => list.some((item) => String(item._id) === String(created._id)) ? list : [...list, created]);
+      await onSubmit(payload);
       setText(''); setAttachment(null); setReplyTo(null); setPicker(false);
     } catch (submitError) { setError(errorMessage(submitError)); }
     finally { setBusy(false); }
@@ -804,27 +794,13 @@ function CommentsSection({ postId, comments, user, onSubmit, inputId, compact = 
     parentCommentId: replyTo?._id || null
   });
 
-  const likeComment = async (comment) => {
-    try {
-      const { data } = await api.post(`/posts/${postId}/comments/${comment._id}/like`);
-      setLocalComments((list) => list.map((item) => String(item._id) === String(comment._id) ? {
-        ...item,
-        likes: data.liked
-          ? [...(item.likes || []), user._id]
-          : (item.likes || []).filter((id) => String(id?._id || id) !== String(user._id))
-      } : item));
-    } catch (likeError) {
-      setError(errorMessage(likeError));
-    }
-  };
-
   const roots = children.get('root') || [];
   const visibleRoots = showAllComments || compact ? roots : roots.slice(-3);
   const hiddenRootCount = Math.max(0, roots.length - visibleRoots.length);
   return <section className={`comments-section ${compact ? 'compact' : ''}`}>
     {!compact && hiddenRootCount > 0 && <button className="comments-show-more" type="button" onClick={() => setShowAllComments(true)}>Xem thêm {hiddenRootCount} bình luận</button>}
-    {localComments.length > 0 && <div className="comment-thread-list">
-      {visibleRoots.map((item) => <CommentNode key={item._id} item={item} parent={commentById.get(String(item.parentComment?._id || item.parentComment))} childrenMap={children} commentById={commentById} onLike={likeComment} currentUserId={user._id} onReply={(comment) => {
+    {comments.length > 0 && <div className="comment-thread-list">
+      {visibleRoots.map((item) => <CommentNode key={item._id} item={item} parent={commentById.get(String(item.parentComment?._id || item.parentComment))} childrenMap={children} commentById={commentById} onReply={(comment) => {
         setReplyTo(comment);
         window.requestAnimationFrame(() => document.getElementById(inputId)?.focus());
       }} />)}
@@ -864,13 +840,11 @@ function CommentsSection({ postId, comments, user, onSubmit, inputId, compact = 
   </section>;
 }
 
-function CommentNode({ item, parent, childrenMap, commentById, onReply, onLike, currentUserId, depth = 0 }) {
+function CommentNode({ item, parent, childrenMap, commentById, onReply, depth = 0 }) {
   const navigate = useNavigate();
   const replies = childrenMap.get(String(item._id)) || [];
   const replyTarget = parent?.user?.displayName;
   const commentUserId = item.user?._id || item.user?.id;
-  const likes = item.likes || [];
-  const liked = likes.some((id) => String(id?._id || id) === String(currentUserId));
   const openUserProfile = () => {
     if (commentUserId) navigate(`/users/${commentUserId}`);
   };
@@ -884,8 +858,8 @@ function CommentNode({ item, parent, childrenMap, commentById, onReply, onLike, 
         {replyTarget && <span className="comment-reply-target">Trả lời <b>{replyTarget}</b></span>}
         <CommentContent item={item} />
       </div>
-      <div className="comment-meta-row"><time>{formatDistanceToNow(new Date(item.createdAt), { addSuffix: true, locale: vi })}</time><button className={liked ? 'liked' : ''} onClick={() => onLike(item)}><Heart size={12} fill={liked ? 'currentColor' : 'none'} /> Thích{likes.length ? ` ${likes.length}` : ''}</button><button onClick={() => onReply(item)}><Reply size={12} /> Trả lời</button></div>
-      {replies.length > 0 && <div className="comment-replies">{replies.map((reply) => <CommentNode key={reply._id} item={reply} parent={item} childrenMap={childrenMap} commentById={commentById} onReply={onReply} onLike={onLike} currentUserId={currentUserId} depth={depth + 1} />)}</div>}
+      <div className="comment-meta-row"><time>{formatDistanceToNow(new Date(item.createdAt), { addSuffix: true, locale: vi })}</time><button onClick={() => onReply(item)}><Reply size={12} /> Trả lời</button></div>
+      {replies.length > 0 && <div className="comment-replies">{replies.map((reply) => <CommentNode key={reply._id} item={reply} parent={item} childrenMap={childrenMap} commentById={commentById} onReply={onReply} depth={depth + 1} />)}</div>}
     </div>
   </div>;
 }

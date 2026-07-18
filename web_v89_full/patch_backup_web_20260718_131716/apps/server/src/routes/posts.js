@@ -4,7 +4,6 @@ import CommunityGroup from '../models/CommunityGroup.js';
 import { requireAuth } from '../middleware/auth.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { createNotification } from '../services/notifications.js';
-import { hiddenUserIdsFor, usersAreBlocked } from '../utils/socialAccess.js';
 
 const router = express.Router();
 router.use(requireAuth);
@@ -24,9 +23,7 @@ const populatePost = (query) => query
 
 async function canView(post, viewer) {
   if (!post || post.isDeleted) return false;
-  const authorId = post.author?._id || post.author;
-  if (String(authorId) === String(viewer._id)) return true;
-  if (await usersAreBlocked(viewer, authorId)) return false;
+  if (String(post.author?._id || post.author) === String(viewer._id)) return true;
   if (post.group) {
     const groupId = post.group?._id || post.group;
     const group = post.group?.members ? post.group : await CommunityGroup.findById(groupId).select('privacy members owner admins');
@@ -42,7 +39,6 @@ async function canView(post, viewer) {
 }
 
 router.get('/feed', asyncHandler(async (req, res) => {
-  const hiddenAuthors = await hiddenUserIdsFor(req.user);
   const visibleAuthors = [...req.user.friends, req.user._id];
   const [memberGroupIds, publicGroupIds] = await Promise.all([
     CommunityGroup.find({ members: req.user._id, isActive: true }).distinct('_id'),
@@ -51,7 +47,6 @@ router.get('/feed', asyncHandler(async (req, res) => {
   const visibleGroupIds = [...new Set([...memberGroupIds, ...publicGroupIds].map(String))];
   const query = {
     isDeleted: false,
-    author: { $nin: hiddenAuthors },
     $or: [
       { privacy: 'public', group: null },
       { author: { $in: visibleAuthors }, privacy: 'friends', group: null },
@@ -76,9 +71,6 @@ router.get('/feed', asyncHandler(async (req, res) => {
 
 router.get('/user/:userId', asyncHandler(async (req, res) => {
   const isSelf = String(req.params.userId) === String(req.user._id);
-  if (!isSelf && await usersAreBlocked(req.user, req.params.userId)) {
-    return res.status(403).json({ message: 'Không thể xem bài viết do danh sách chặn.' });
-  }
   const isFriend = req.user.friends.some((id) => String(id) === String(req.params.userId));
   const visibility = [{ privacy: 'public' }];
   if (isFriend) visibility.push({ privacy: 'friends' }, { privacy: 'except', excludedUsers: { $ne: req.user._id } });
@@ -166,7 +158,7 @@ router.post('/:id/share', asyncHandler(async (req, res) => {
 
 router.post('/:id/like', asyncHandler(async (req, res) => {
   const post = await Post.findById(req.params.id);
-  if (!post || !(await canView(post, req.user))) return res.status(404).json({ message: 'Không tìm thấy bài viết.' });
+  if (!post || post.isDeleted) return res.status(404).json({ message: 'Không tìm thấy bài viết.' });
   const liked = post.likes.some((id) => String(id) === String(req.user._id));
   liked ? post.likes.pull(req.user._id) : post.likes.addToSet(req.user._id);
   await post.save();
@@ -238,39 +230,6 @@ router.post('/:id/comments', asyncHandler(async (req, res) => {
     at: new Date().toISOString()
   });
   res.status(201).json(comment);
-}));
-
-
-router.post('/:id/comments/:commentId/like', asyncHandler(async (req, res) => {
-  const post = await Post.findById(req.params.id);
-  if (!post || !(await canView(post, req.user))) return res.status(404).json({ message: 'Không tìm thấy bài viết.' });
-  const comment = post.comments.id(req.params.commentId);
-  if (!comment) return res.status(404).json({ message: 'Không tìm thấy bình luận.' });
-
-  const liked = (comment.likes || []).some((id) => String(id) === String(req.user._id));
-  if (liked) comment.likes.pull(req.user._id);
-  else comment.likes.addToSet(req.user._id);
-  await post.save();
-
-  if (!liked && String(comment.user) !== String(req.user._id)) {
-    await createNotification(req.app.get('io'), {
-      recipient: comment.user,
-      actor: req.user._id,
-      type: 'comment_like',
-      title: 'Lượt thích bình luận mới',
-      body: `${req.user.displayName} đã thích bình luận của bạn.`,
-      data: { postId: post._id, commentId: comment._id }
-    });
-  }
-
-  req.app.get('io').emit('post:comment:changed', {
-    postId: String(post._id),
-    commentId: String(comment._id),
-    actorId: String(req.user._id),
-    at: new Date().toISOString()
-  });
-
-  res.json({ liked: !liked, count: comment.likes.length });
 }));
 
 export default router;

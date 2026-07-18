@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { PostCard } from './TimelinePage';
 
 function cleanError(error) {
   return error?.response?.data?.message || error?.message || 'Có lỗi xảy ra.';
@@ -663,51 +662,6 @@ const css = `
     margin: 0 8px;
   }
 }
-
-.nx-fb-profile__cover-button {
-  position: absolute;
-  z-index: 3;
-  right: 18px;
-  bottom: 16px;
-  border: 0;
-  border-radius: 8px;
-  padding: 10px 14px;
-  background: rgba(255,255,255,.92);
-  color: #050505;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-button.nx-fb-profile__tab {
-  border: 0;
-  background: transparent;
-  cursor: pointer;
-}
-
-.nx-fb-profile__tab-panel { min-height: 260px; }
-.nx-fb-profile__panel-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }
-.nx-fb-profile__panel-head p { margin:4px 0 0; color:var(--fb-muted); }
-.nx-fb-profile__panel-head>b { min-width:40px; height:40px; display:grid; place-items:center; border-radius:50%; background:#e7f3ff; color:var(--fb-blue); }
-.nx-fb-profile__media-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:5px; margin-top:14px; }
-.nx-fb-profile__media-grid a, .nx-fb-profile__media-grid img, .nx-fb-profile__media-grid video { width:100%; aspect-ratio:1/1; display:block; object-fit:cover; border-radius:8px; background:#111827; }
-.nx-fb-profile__friends-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:14px; }
-.nx-fb-profile__friend-card { display:flex; align-items:center; gap:10px; padding:10px; border:1px solid var(--fb-line); border-radius:10px; color:var(--fb-text); text-decoration:none; }
-.nx-fb-profile__friend-avatar, .nx-fb-profile__friend-fallback { width:52px; height:52px; border-radius:10px; object-fit:cover; display:grid; place-items:center; background:#e7f3ff; color:var(--fb-blue); font-weight:900; }
-.nx-fb-profile .post-card { margin:0 !important; }
-
-@media (max-width: 720px) {
-  .nx-fb-profile__shell { padding:0; }
-  .nx-fb-profile__hero { border-radius:0 0 12px 12px; }
-  .nx-fb-profile__cover { height:210px; }
-  .nx-fb-profile__cover-button { right:10px; bottom:10px; padding:8px 10px; font-size:12px; }
-  .nx-fb-profile__tabs { margin:0 8px; overflow-x:auto; }
-  .nx-fb-profile__tab { flex:0 0 auto; min-width:88px; padding:0 10px; }
-  .nx-fb-profile__grid { display:block; margin-top:10px; }
-  .nx-fb-profile__side { position:static; margin-bottom:10px; }
-  .nx-fb-profile__media-grid { grid-template-columns:repeat(3,minmax(0,1fr)); gap:3px; }
-  .nx-fb-profile__friends-grid { grid-template-columns:1fr; }
-}
-
 `;
 
 function Avatar({ user, className, fallbackClassName }) {
@@ -742,7 +696,6 @@ function Modal({ title, onClose, children, actions }) {
 export default function ProfilePage() {
   const auth = useAuth();
   const fileRef = useRef(null);
-  const coverRef = useRef(null);
 
   const [user, setUser] = useState(auth?.user || null);
   const [posts, setPosts] = useState([]);
@@ -750,7 +703,6 @@ export default function ProfilePage() {
   const [postsLoading, setPostsLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [pageMessage, setPageMessage] = useState('');
-  const [activeTab, setActiveTab] = useState('posts');
 
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState({ displayName: '', bio: '' });
@@ -896,60 +848,6 @@ export default function ProfilePage() {
     }
   }
 
-  async function uploadCover(event) {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      setPageMessage('Chỉ được chọn tệp ảnh.');
-      return;
-    }
-
-    setUploading(true);
-    setPageMessage('');
-    try {
-      const body = new FormData();
-      body.append('file', file);
-      const uploadData = (await api.post('/uploads', body)).data || {};
-      const url = uploadData.url || uploadData.path || uploadData.fileUrl || uploadData.data?.url;
-      if (!url) throw new Error('Server không trả về URL ảnh.');
-      const { data } = await api.patch('/users/me', { cover: url });
-      await persistUser(data);
-    } catch (error) {
-      setPageMessage(cleanError(error));
-    } finally {
-      setUploading(false);
-    }
-  }
-
-  async function likePost(post) {
-    try {
-      const { data } = await api.post(`/posts/${post._id}/like`);
-      setPosts((list) => list.map((item) => String(item._id) === String(post._id) ? {
-        ...item,
-        likes: data.liked
-          ? [...(item.likes || []), user._id]
-          : (item.likes || []).filter((id) => String(id?._id || id) !== String(user._id))
-      } : item));
-    } catch (error) {
-      setPageMessage(cleanError(error));
-    }
-  }
-
-  async function commentPost(post, payload) {
-    const { data } = await api.post(`/posts/${post._id}/comments`, payload);
-    setPosts((list) => list.map((item) => String(item._id) === String(post._id)
-      ? { ...item, comments: [...(item.comments || []), data] }
-      : item));
-    return data;
-  }
-
-  const mediaItems = posts.flatMap((post) => (post.media || []).map((item, index) => ({
-    ...item,
-    postId: post._id,
-    key: `${post._id}-${index}`,
-  })));
-
   function openPassword() {
     setPasswordForm({
       currentPassword: '',
@@ -1032,19 +930,10 @@ export default function ProfilePage() {
         hidden
         onChange={uploadAvatar}
       />
-      <input
-        ref={coverRef}
-        type="file"
-        accept="image/*"
-        hidden
-        onChange={uploadCover}
-      />
 
       <div className="nx-fb-profile__shell">
         <section className="nx-fb-profile__hero">
-          <div className="nx-fb-profile__cover" style={user?.cover ? { backgroundImage: `linear-gradient(transparent, rgba(15,23,42,.18)), url(${user.cover})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}>
-            <button type="button" className="nx-fb-profile__cover-button" disabled={uploading} onClick={() => coverRef.current?.click()}>📷 {uploading ? 'Đang tải…' : 'Đổi ảnh bìa'}</button>
-          </div>
+          <div className="nx-fb-profile__cover" />
 
           <div className="nx-fb-profile__identity">
             <div className="nx-fb-profile__avatar-wrap">
@@ -1080,10 +969,10 @@ export default function ProfilePage() {
           </div>
 
           <nav className="nx-fb-profile__tabs">
-            <button type="button" className={`nx-fb-profile__tab ${activeTab === 'posts' ? 'is-active' : ''}`} onClick={() => setActiveTab('posts')}>Bài viết</button>
-            <button type="button" className={`nx-fb-profile__tab ${activeTab === 'about' ? 'is-active' : ''}`} onClick={() => setActiveTab('about')}>Giới thiệu</button>
-            <button type="button" className={`nx-fb-profile__tab ${activeTab === 'friends' ? 'is-active' : ''}`} onClick={() => setActiveTab('friends')}>Bạn bè</button>
-            <button type="button" className={`nx-fb-profile__tab ${activeTab === 'media' ? 'is-active' : ''}`} onClick={() => setActiveTab('media')}>Ảnh</button>
+            <div className="nx-fb-profile__tab is-active">Bài viết</div>
+            <div className="nx-fb-profile__tab">Giới thiệu</div>
+            <div className="nx-fb-profile__tab">Bạn bè</div>
+            <div className="nx-fb-profile__tab">Ảnh</div>
           </nav>
         </section>
 
@@ -1147,56 +1036,73 @@ export default function ProfilePage() {
           </aside>
 
           <main className="nx-fb-profile__feed">
-            {activeTab === 'posts' && <>
-              <section className="nx-fb-profile__card">
-                <div className="nx-fb-profile__composer">
-                  <Avatar user={user} className="nx-fb-profile__mini-avatar" fallbackClassName="nx-fb-profile__mini-fallback" />
-                  <div className="nx-fb-profile__composer-placeholder">Bài viết trên trang cá nhân của bạn</div>
+            <section className="nx-fb-profile__card">
+              <div className="nx-fb-profile__composer">
+                <Avatar
+                  user={user}
+                  className="nx-fb-profile__mini-avatar"
+                  fallbackClassName="nx-fb-profile__mini-fallback"
+                />
+                <div className="nx-fb-profile__composer-placeholder">
+                  Bạn đang nghĩ gì?
                 </div>
+              </div>
+            </section>
+
+            {postsLoading ? (
+              <section className="nx-fb-profile__card nx-fb-profile__loading">
+                Đang tải bài viết…
               </section>
+            ) : null}
 
-              {postsLoading && <section className="nx-fb-profile__card nx-fb-profile__loading">Đang tải bài viết…</section>}
-              {!postsLoading && posts.length === 0 && <section className="nx-fb-profile__card nx-fb-profile__empty">Chưa có bài viết nào.</section>}
-              {posts.map((post) => <PostCard
-                key={getId(post) || post.createdAt}
-                profileMode
-                post={post}
-                user={user}
-                onLike={() => likePost(post)}
-                onComment={(payload) => commentPost(post, payload)}
-                onUpdated={(updated) => setPosts((list) => list.map((item) => String(item._id) === String(updated._id) ? updated : item))}
-                onDeleted={(postId) => setPosts((list) => list.filter((item) => String(item._id) !== String(postId)))}
-              />)}
-            </>}
+            {!postsLoading && posts.length === 0 ? (
+              <section className="nx-fb-profile__card nx-fb-profile__empty">
+                Chưa có bài viết nào.
+              </section>
+            ) : null}
 
-            {activeTab === 'about' && <section className="nx-fb-profile__card nx-fb-profile__tab-panel">
-              <h2>Giới thiệu</h2>
-              <div className="nx-fb-profile__info-list">
-                <div className="nx-fb-profile__info-row"><span className="nx-fb-profile__info-icon">👤</span><span>{getName(user)}</span></div>
-                <div className="nx-fb-profile__info-row"><span className="nx-fb-profile__info-icon">＠</span><span>{user?.username ? `@${user.username}` : 'Chưa đặt username'}</span></div>
-                <div className="nx-fb-profile__info-row"><span className="nx-fb-profile__info-icon">✍️</span><span>{user?.bio || 'Chưa có giới thiệu.'}</span></div>
-              </div>
-            </section>}
+            {posts.map((post) => {
+              const image = firstPostImage(post);
+              const likes = Array.isArray(post?.likes) ? post.likes.length : Number(post?.likeCount || 0);
+              const comments = Array.isArray(post?.comments) ? post.comments.length : Number(post?.commentCount || 0);
 
-            {activeTab === 'friends' && <section className="nx-fb-profile__card nx-fb-profile__tab-panel">
-              <h2>Bạn bè</h2>
-              <div className="nx-fb-profile__friends-grid">
-                {(user?.friends || []).filter((friend) => friend && typeof friend === 'object').map((friend) => <a key={friend._id} href={`/users/${friend._id}`} className="nx-fb-profile__friend-card">
-                  <Avatar user={friend} className="nx-fb-profile__friend-avatar" fallbackClassName="nx-fb-profile__friend-fallback" />
-                  <b>{getName(friend)}</b>
-                </a>)}
-              </div>
-              {(user?.friends || []).length === 0 && <div className="nx-fb-profile__empty">Danh sách bạn bè đang trống.</div>}
-            </section>}
+              return (
+                <article className="nx-fb-profile__card nx-fb-profile__post" key={getId(post) || post.createdAt}>
+                  <header className="nx-fb-profile__post-head">
+                    <Avatar
+                      user={user}
+                      className="nx-fb-profile__mini-avatar"
+                      fallbackClassName="nx-fb-profile__mini-fallback"
+                    />
+                    <div className="nx-fb-profile__post-meta">
+                      <strong>{getName(user)}</strong>
+                      <span>{formatDate(post?.createdAt)} · 🌐</span>
+                    </div>
+                  </header>
 
-            {activeTab === 'media' && <section className="nx-fb-profile__card nx-fb-profile__tab-panel">
-              <div className="nx-fb-profile__panel-head"><div><h2>Ảnh và video</h2><p>Tất cả nội dung đa phương tiện đã đăng.</p></div><b>{mediaItems.length}</b></div>
-              {mediaItems.length === 0 ? <div className="nx-fb-profile__empty">Chưa có ảnh hoặc video.</div> : <div className="nx-fb-profile__media-grid">
-                {mediaItems.map((item) => item.type === 'video'
-                  ? <video key={item.key} src={item.url} poster={item.thumbUrl || undefined} controls playsInline preload="metadata" />
-                  : <a key={item.key} href={item.url} target="_blank" rel="noreferrer"><img src={item.thumbUrl || item.url} alt="Ảnh đã đăng" loading="lazy" /></a>)}
-              </div>}
-            </section>}
+                  {post?.text || post?.content ? (
+                    <div className="nx-fb-profile__post-text">
+                      {post.text || post.content}
+                    </div>
+                  ) : null}
+
+                  {image ? (
+                    <img className="nx-fb-profile__post-image" src={image} alt="" />
+                  ) : null}
+
+                  <div className="nx-fb-profile__post-stats">
+                    <span>👍 {likes}</span>
+                    <span>{comments} bình luận</span>
+                  </div>
+
+                  <div className="nx-fb-profile__post-actions">
+                    <button type="button" className="nx-fb-profile__post-action">👍 Thích</button>
+                    <button type="button" className="nx-fb-profile__post-action">💬 Bình luận</button>
+                    <button type="button" className="nx-fb-profile__post-action">↗ Chia sẻ</button>
+                  </div>
+                </article>
+              );
+            })}
           </main>
         </div>
       </div>

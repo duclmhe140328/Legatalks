@@ -1,0 +1,763 @@
+diff -ruN a/apps/server/src/models/Post.js b/apps/server/src/models/Post.js
+--- a/apps/server/src/models/Post.js	2026-07-18 06:11:56.832342810 +0000
++++ b/apps/server/src/models/Post.js	2026-07-18 06:11:56.841862626 +0000
+@@ -15,6 +15,7 @@
+   kind: { type: String, enum: ['text', 'sticker', 'image', 'audio'], default: 'text' },
+   text: { type: String, default: '', maxlength: 2000 },
+   media: [commentMediaSchema],
++  likes: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+   createdAt: { type: Date, default: Date.now }
+ });
+ 
+diff -ruN a/apps/server/src/routes/posts.js b/apps/server/src/routes/posts.js
+--- a/apps/server/src/routes/posts.js	2026-07-18 06:11:56.872498418 +0000
++++ b/apps/server/src/routes/posts.js	2026-07-18 06:11:56.881243804 +0000
+@@ -4,6 +4,7 @@
+ import { requireAuth } from '../middleware/auth.js';
+ import { asyncHandler } from '../utils/asyncHandler.js';
+ import { createNotification } from '../services/notifications.js';
++import { hiddenUserIdsFor, usersAreBlocked } from '../utils/socialAccess.js';
+ 
+ const router = express.Router();
+ router.use(requireAuth);
+@@ -23,7 +24,9 @@
+ 
+ async function canView(post, viewer) {
+   if (!post || post.isDeleted) return false;
+-  if (String(post.author?._id || post.author) === String(viewer._id)) return true;
++  const authorId = post.author?._id || post.author;
++  if (String(authorId) === String(viewer._id)) return true;
++  if (await usersAreBlocked(viewer, authorId)) return false;
+   if (post.group) {
+     const groupId = post.group?._id || post.group;
+     const group = post.group?.members ? post.group : await CommunityGroup.findById(groupId).select('privacy members owner admins');
+@@ -39,6 +42,7 @@
+ }
+ 
+ router.get('/feed', asyncHandler(async (req, res) => {
++  const hiddenAuthors = await hiddenUserIdsFor(req.user);
+   const visibleAuthors = [...req.user.friends, req.user._id];
+   const [memberGroupIds, publicGroupIds] = await Promise.all([
+     CommunityGroup.find({ members: req.user._id, isActive: true }).distinct('_id'),
+@@ -47,6 +51,7 @@
+   const visibleGroupIds = [...new Set([...memberGroupIds, ...publicGroupIds].map(String))];
+   const query = {
+     isDeleted: false,
++    author: { $nin: hiddenAuthors },
+     $or: [
+       { privacy: 'public', group: null },
+       { author: { $in: visibleAuthors }, privacy: 'friends', group: null },
+@@ -71,6 +76,9 @@
+ 
+ router.get('/user/:userId', asyncHandler(async (req, res) => {
+   const isSelf = String(req.params.userId) === String(req.user._id);
++  if (!isSelf && await usersAreBlocked(req.user, req.params.userId)) {
++    return res.status(403).json({ message: 'Không thể xem bài viết do danh sách chặn.' });
++  }
+   const isFriend = req.user.friends.some((id) => String(id) === String(req.params.userId));
+   const visibility = [{ privacy: 'public' }];
+   if (isFriend) visibility.push({ privacy: 'friends' }, { privacy: 'except', excludedUsers: { $ne: req.user._id } });
+@@ -158,7 +166,7 @@
+ 
+ router.post('/:id/like', asyncHandler(async (req, res) => {
+   const post = await Post.findById(req.params.id);
+-  if (!post || post.isDeleted) return res.status(404).json({ message: 'Không tìm thấy bài viết.' });
++  if (!post || !(await canView(post, req.user))) return res.status(404).json({ message: 'Không tìm thấy bài viết.' });
+   const liked = post.likes.some((id) => String(id) === String(req.user._id));
+   liked ? post.likes.pull(req.user._id) : post.likes.addToSet(req.user._id);
+   await post.save();
+@@ -232,4 +240,37 @@
+   res.status(201).json(comment);
+ }));
+ 
++
++router.post('/:id/comments/:commentId/like', asyncHandler(async (req, res) => {
++  const post = await Post.findById(req.params.id);
++  if (!post || !(await canView(post, req.user))) return res.status(404).json({ message: 'Không tìm thấy bài viết.' });
++  const comment = post.comments.id(req.params.commentId);
++  if (!comment) return res.status(404).json({ message: 'Không tìm thấy bình luận.' });
++
++  const liked = (comment.likes || []).some((id) => String(id) === String(req.user._id));
++  if (liked) comment.likes.pull(req.user._id);
++  else comment.likes.addToSet(req.user._id);
++  await post.save();
++
++  if (!liked && String(comment.user) !== String(req.user._id)) {
++    await createNotification(req.app.get('io'), {
++      recipient: comment.user,
++      actor: req.user._id,
++      type: 'comment_like',
++      title: 'Lượt thích bình luận mới',
++      body: `${req.user.displayName} đã thích bình luận của bạn.`,
++      data: { postId: post._id, commentId: comment._id }
++    });
++  }
++
++  req.app.get('io').emit('post:comment:changed', {
++    postId: String(post._id),
++    commentId: String(comment._id),
++    actorId: String(req.user._id),
++    at: new Date().toISOString()
++  });
++
++  res.json({ liked: !liked, count: comment.likes.length });
++}));
++
+ export default router;
+diff -ruN a/apps/server/src/routes/stories.js b/apps/server/src/routes/stories.js
+--- a/apps/server/src/routes/stories.js	2026-07-18 06:11:56.909862259 +0000
++++ b/apps/server/src/routes/stories.js	2026-07-18 06:11:56.917761423 +0000
+@@ -3,16 +3,28 @@
+ import { requireAuth } from '../middleware/auth.js';
+ import { asyncHandler } from '../utils/asyncHandler.js';
+ import { createNotification } from '../services/notifications.js';
++import { hiddenUserIdsFor, usersAreBlocked } from '../utils/socialAccess.js';
+ 
+ const router = express.Router();
+ router.use(requireAuth);
+ const authorFields = 'displayName avatar accountType verified';
+-const populateStory = (query) => query.populate('author', authorFields).populate('reactions.user', authorFields).populate('replies.user', authorFields);
++const populateStory = (query) => query.populate('author', authorFields).populate('viewers.user', authorFields).populate('reactions.user', authorFields).populate('replies.user', authorFields);
++
++async function canViewStory(story, viewer) {
++  if (!story || story.isDeleted || story.expiresAt <= new Date()) return false;
++  const authorId = story.author?._id || story.author;
++  if (String(authorId) === String(viewer._id)) return true;
++  if (await usersAreBlocked(viewer, authorId)) return false;
++  if (story.privacy === 'public') return true;
++  return story.privacy === 'friends' && (viewer.friends || []).some((id) => String(id) === String(authorId));
++}
+ 
+ router.get('/', asyncHandler(async (req, res) => {
++  const hiddenAuthors = await hiddenUserIdsFor(req.user);
+   const visibleAuthors = [...req.user.friends, req.user._id];
+   const stories = await populateStory(Story.find({
+     isDeleted: false, expiresAt: { $gt: new Date() },
++    author: { $nin: hiddenAuthors },
+     $or: [{ privacy: 'public' }, { privacy: 'friends', author: { $in: visibleAuthors } }, { author: req.user._id }]
+   }).sort({ createdAt: -1 }).limit(100));
+   res.json(stories);
+@@ -41,10 +53,7 @@
+   if (!story) return res.status(404).json({ message: 'Không tìm thấy story.' });
+ 
+   const isOwner = String(story.author) === String(req.user._id);
+-  const isFriend = (req.user.friends || []).some((id) => String(id) === String(story.author));
+-  const canView = isOwner || story.privacy === 'public' || (story.privacy === 'friends' && isFriend);
+-
+-  if (!canView) return res.status(403).json({ message: 'Bạn không có quyền xem story này.' });
++  if (!(await canViewStory(story, req.user))) return res.status(403).json({ message: 'Bạn không có quyền xem story này.' });
+ 
+   if (!isOwner) {
+     await Story.updateOne(
+@@ -58,7 +67,7 @@
+ 
+ router.post('/:id/react', asyncHandler(async (req, res) => {
+   const story = await Story.findOne({ _id: req.params.id, isDeleted: false, expiresAt: { $gt: new Date() } });
+-  if (!story) return res.status(404).json({ message: 'Không tìm thấy story.' });
++  if (!story || !(await canViewStory(story, req.user))) return res.status(404).json({ message: 'Không tìm thấy story.' });
+   const emoji = String(req.body.emoji || '👍').slice(0, 8);
+   const old = story.reactions.find((item) => String(item.user) === String(req.user._id));
+   if (old) old.emoji = emoji; else story.reactions.push({ user: req.user._id, emoji });
+@@ -71,7 +80,7 @@
+ 
+ router.post('/:id/replies', asyncHandler(async (req, res) => {
+   const story = await Story.findOne({ _id: req.params.id, isDeleted: false, expiresAt: { $gt: new Date() } });
+-  if (!story) return res.status(404).json({ message: 'Không tìm thấy story.' });
++  if (!story || !(await canViewStory(story, req.user))) return res.status(404).json({ message: 'Không tìm thấy story.' });
+   const text = String(req.body.text || '').trim();
+   if (!text) return res.status(400).json({ message: 'Nội dung trả lời trống.' });
+   story.replies.push({ user: req.user._id, text });
+diff -ruN a/apps/server/src/utils/socialAccess.js b/apps/server/src/utils/socialAccess.js
+--- a/apps/server/src/utils/socialAccess.js	1970-01-01 00:00:00.000000000 +0000
++++ b/apps/server/src/utils/socialAccess.js	2026-07-18 06:11:56.946236919 +0000
+@@ -0,0 +1,19 @@
++import User from '../models/User.js';
++
++const sameId = (a, b) => String(a?._id || a || '') === String(b?._id || b || '');
++
++export async function hiddenUserIdsFor(viewer) {
++  const ownBlocked = (viewer?.blockedUsers || []).map((id) => String(id));
++  const blockedBy = await User.find({ blockedUsers: viewer._id }).distinct('_id');
++  return [...new Set([...ownBlocked, ...blockedBy.map(String)])];
++}
++
++export async function usersAreBlocked(viewer, targetId) {
++  if (!viewer || !targetId || sameId(viewer._id, targetId)) return false;
++  if ((viewer.blockedUsers || []).some((id) => sameId(id, targetId))) return true;
++  return Boolean(await User.exists({ _id: targetId, blockedUsers: viewer._id }));
++}
++
++export function isSameUser(a, b) {
++  return sameId(a, b);
++}
+diff -ruN a/apps/web/src/facebook-social-spec.css b/apps/web/src/facebook-social-spec.css
+--- a/apps/web/src/facebook-social-spec.css	2026-07-18 06:11:56.977075376 +0000
++++ b/apps/web/src/facebook-social-spec.css	2026-07-18 06:11:56.986658572 +0000
+@@ -3749,3 +3749,60 @@
+ body .meeting-mini-controller {
+   z-index: 1400 !important;
+ }
++
++/* Social profile actions, story composer and comment reactions. */
++.story-privacy {
++  min-height: 36px;
++  border: 1px solid #d8dadf;
++  border-radius: 8px;
++  padding: 0 9px;
++  background: #f0f2f5;
++  color: #050505;
++  font-weight: 750;
++}
++.comment-meta-row button.liked { color: #e11d48 !important; }
++.public-profile-more { position: relative; }
++.public-profile-more-menu {
++  position: absolute;
++  z-index: 25;
++  top: calc(100% + 7px);
++  right: 0;
++  min-width: 190px;
++  overflow: hidden;
++  border: 1px solid #e4e6eb;
++  border-radius: 10px;
++  background: #fff;
++  box-shadow: 0 12px 32px rgba(15, 23, 42, .2);
++}
++.public-profile-more-menu button {
++  width: 100%;
++  display: flex;
++  align-items: center;
++  gap: 9px;
++  border: 0;
++  padding: 11px 13px;
++  background: #fff;
++  color: #050505;
++  font-weight: 750;
++  text-align: left;
++}
++.public-profile-more-menu button:hover { background: #f0f2f5; }
++.public-profile-more-menu button.danger { color: #dc2626; }
++.public-profile-more-menu svg { width: 18px; height: 18px; }
++
++@media (max-width: 720px) {
++  .stories-card { margin-inline: 0 !important; border-radius: 0 !important; padding: 10px !important; }
++  .stories-create { display: grid !important; grid-template-columns: 38px minmax(0, 1fr); gap: 8px !important; }
++  .stories-create > .avatar { grid-row: 1 / span 2; align-self: start; }
++  .stories-create > input { min-width: 0; width: 100%; }
++  .stories-create > button:not(.story-send), .stories-create > .story-privacy, .stories-create > .story-send { min-width: 0; width: 100%; font-size: 12px; padding-inline: 7px !important; }
++  .stories-create > button:not(.story-send), .stories-create > .story-privacy, .stories-create > .story-send { grid-column: 2; }
++  .stories-strip { width: 100%; max-width: 100%; overflow-x: auto !important; overscroll-behavior-inline: contain; scroll-snap-type: x proximity; }
++  .story-chip { min-width: 92px !important; width: 92px !important; height: 154px !important; scroll-snap-align: start; }
++  .story-viewer { padding: 0 !important; align-items: stretch !important; }
++  .story-viewer-card { width: 100% !important; max-width: none !important; height: 100dvh !important; max-height: 100dvh !important; border-radius: 0 !important; overflow-y: auto !important; padding: max(14px, env(safe-area-inset-top)) 12px max(18px, env(safe-area-inset-bottom)) !important; }
++  .story-viewer-media { width: 100% !important; max-height: calc(100dvh - 250px) !important; object-fit: contain !important; }
++  .story-reactions { overflow-x: auto; flex-wrap: nowrap !important; }
++  .story-reply-box { position: sticky; bottom: 0; background: #111827; padding-bottom: env(safe-area-inset-bottom); }
++  .public-profile-actions { flex-wrap: wrap; }
++}
+diff -ruN a/apps/web/src/pages/ProfilePage.jsx b/apps/web/src/pages/ProfilePage.jsx
+--- a/apps/web/src/pages/ProfilePage.jsx	2026-07-18 06:11:57.013833351 +0000
++++ b/apps/web/src/pages/ProfilePage.jsx	2026-07-18 06:11:57.025806039 +0000
+@@ -1,6 +1,7 @@
+ import { useEffect, useMemo, useRef, useState } from 'react';
+ import { api } from '../services/api';
+ import { useAuth } from '../context/AuthContext';
++import { PostCard } from './TimelinePage';
+ 
+ function cleanError(error) {
+   return error?.response?.data?.message || error?.message || 'Có lỗi xảy ra.';
+@@ -662,6 +663,51 @@
+     margin: 0 8px;
+   }
+ }
++
++.nx-fb-profile__cover-button {
++  position: absolute;
++  z-index: 3;
++  right: 18px;
++  bottom: 16px;
++  border: 0;
++  border-radius: 8px;
++  padding: 10px 14px;
++  background: rgba(255,255,255,.92);
++  color: #050505;
++  font-weight: 800;
++  cursor: pointer;
++}
++
++button.nx-fb-profile__tab {
++  border: 0;
++  background: transparent;
++  cursor: pointer;
++}
++
++.nx-fb-profile__tab-panel { min-height: 260px; }
++.nx-fb-profile__panel-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }
++.nx-fb-profile__panel-head p { margin:4px 0 0; color:var(--fb-muted); }
++.nx-fb-profile__panel-head>b { min-width:40px; height:40px; display:grid; place-items:center; border-radius:50%; background:#e7f3ff; color:var(--fb-blue); }
++.nx-fb-profile__media-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:5px; margin-top:14px; }
++.nx-fb-profile__media-grid a, .nx-fb-profile__media-grid img, .nx-fb-profile__media-grid video { width:100%; aspect-ratio:1/1; display:block; object-fit:cover; border-radius:8px; background:#111827; }
++.nx-fb-profile__friends-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:14px; }
++.nx-fb-profile__friend-card { display:flex; align-items:center; gap:10px; padding:10px; border:1px solid var(--fb-line); border-radius:10px; color:var(--fb-text); text-decoration:none; }
++.nx-fb-profile__friend-avatar, .nx-fb-profile__friend-fallback { width:52px; height:52px; border-radius:10px; object-fit:cover; display:grid; place-items:center; background:#e7f3ff; color:var(--fb-blue); font-weight:900; }
++.nx-fb-profile .post-card { margin:0 !important; }
++
++@media (max-width: 720px) {
++  .nx-fb-profile__shell { padding:0; }
++  .nx-fb-profile__hero { border-radius:0 0 12px 12px; }
++  .nx-fb-profile__cover { height:210px; }
++  .nx-fb-profile__cover-button { right:10px; bottom:10px; padding:8px 10px; font-size:12px; }
++  .nx-fb-profile__tabs { margin:0 8px; overflow-x:auto; }
++  .nx-fb-profile__tab { flex:0 0 auto; min-width:88px; padding:0 10px; }
++  .nx-fb-profile__grid { display:block; margin-top:10px; }
++  .nx-fb-profile__side { position:static; margin-bottom:10px; }
++  .nx-fb-profile__media-grid { grid-template-columns:repeat(3,minmax(0,1fr)); gap:3px; }
++  .nx-fb-profile__friends-grid { grid-template-columns:1fr; }
++}
++
+ `;
+ 
+ function Avatar({ user, className, fallbackClassName }) {
+@@ -696,6 +742,7 @@
+ export default function ProfilePage() {
+   const auth = useAuth();
+   const fileRef = useRef(null);
++  const coverRef = useRef(null);
+ 
+   const [user, setUser] = useState(auth?.user || null);
+   const [posts, setPosts] = useState([]);
+@@ -703,6 +750,7 @@
+   const [postsLoading, setPostsLoading] = useState(true);
+   const [uploading, setUploading] = useState(false);
+   const [pageMessage, setPageMessage] = useState('');
++  const [activeTab, setActiveTab] = useState('posts');
+ 
+   const [editOpen, setEditOpen] = useState(false);
+   const [editForm, setEditForm] = useState({ displayName: '', bio: '' });
+@@ -848,6 +896,60 @@
+     }
+   }
+ 
++  async function uploadCover(event) {
++    const file = event.target.files?.[0];
++    event.target.value = '';
++    if (!file) return;
++    if (!file.type.startsWith('image/')) {
++      setPageMessage('Chỉ được chọn tệp ảnh.');
++      return;
++    }
++
++    setUploading(true);
++    setPageMessage('');
++    try {
++      const body = new FormData();
++      body.append('file', file);
++      const uploadData = (await api.post('/uploads', body)).data || {};
++      const url = uploadData.url || uploadData.path || uploadData.fileUrl || uploadData.data?.url;
++      if (!url) throw new Error('Server không trả về URL ảnh.');
++      const { data } = await api.patch('/users/me', { cover: url });
++      await persistUser(data);
++    } catch (error) {
++      setPageMessage(cleanError(error));
++    } finally {
++      setUploading(false);
++    }
++  }
++
++  async function likePost(post) {
++    try {
++      const { data } = await api.post(`/posts/${post._id}/like`);
++      setPosts((list) => list.map((item) => String(item._id) === String(post._id) ? {
++        ...item,
++        likes: data.liked
++          ? [...(item.likes || []), user._id]
++          : (item.likes || []).filter((id) => String(id?._id || id) !== String(user._id))
++      } : item));
++    } catch (error) {
++      setPageMessage(cleanError(error));
++    }
++  }
++
++  async function commentPost(post, payload) {
++    const { data } = await api.post(`/posts/${post._id}/comments`, payload);
++    setPosts((list) => list.map((item) => String(item._id) === String(post._id)
++      ? { ...item, comments: [...(item.comments || []), data] }
++      : item));
++    return data;
++  }
++
++  const mediaItems = posts.flatMap((post) => (post.media || []).map((item, index) => ({
++    ...item,
++    postId: post._id,
++    key: `${post._id}-${index}`,
++  })));
++
+   function openPassword() {
+     setPasswordForm({
+       currentPassword: '',
+@@ -930,10 +1032,19 @@
+         hidden
+         onChange={uploadAvatar}
+       />
++      <input
++        ref={coverRef}
++        type="file"
++        accept="image/*"
++        hidden
++        onChange={uploadCover}
++      />
+ 
+       <div className="nx-fb-profile__shell">
+         <section className="nx-fb-profile__hero">
+-          <div className="nx-fb-profile__cover" />
++          <div className="nx-fb-profile__cover" style={user?.cover ? { backgroundImage: `linear-gradient(transparent, rgba(15,23,42,.18)), url(${user.cover})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}>
++            <button type="button" className="nx-fb-profile__cover-button" disabled={uploading} onClick={() => coverRef.current?.click()}>📷 {uploading ? 'Đang tải…' : 'Đổi ảnh bìa'}</button>
++          </div>
+ 
+           <div className="nx-fb-profile__identity">
+             <div className="nx-fb-profile__avatar-wrap">
+@@ -969,10 +1080,10 @@
+           </div>
+ 
+           <nav className="nx-fb-profile__tabs">
+-            <div className="nx-fb-profile__tab is-active">Bài viết</div>
+-            <div className="nx-fb-profile__tab">Giới thiệu</div>
+-            <div className="nx-fb-profile__tab">Bạn bè</div>
+-            <div className="nx-fb-profile__tab">Ảnh</div>
++            <button type="button" className={`nx-fb-profile__tab ${activeTab === 'posts' ? 'is-active' : ''}`} onClick={() => setActiveTab('posts')}>Bài viết</button>
++            <button type="button" className={`nx-fb-profile__tab ${activeTab === 'about' ? 'is-active' : ''}`} onClick={() => setActiveTab('about')}>Giới thiệu</button>
++            <button type="button" className={`nx-fb-profile__tab ${activeTab === 'friends' ? 'is-active' : ''}`} onClick={() => setActiveTab('friends')}>Bạn bè</button>
++            <button type="button" className={`nx-fb-profile__tab ${activeTab === 'media' ? 'is-active' : ''}`} onClick={() => setActiveTab('media')}>Ảnh</button>
+           </nav>
+         </section>
+ 
+@@ -1036,73 +1147,56 @@
+           </aside>
+ 
+           <main className="nx-fb-profile__feed">
+-            <section className="nx-fb-profile__card">
+-              <div className="nx-fb-profile__composer">
+-                <Avatar
+-                  user={user}
+-                  className="nx-fb-profile__mini-avatar"
+-                  fallbackClassName="nx-fb-profile__mini-fallback"
+-                />
+-                <div className="nx-fb-profile__composer-placeholder">
+-                  Bạn đang nghĩ gì?
++            {activeTab === 'posts' && <>
++              <section className="nx-fb-profile__card">
++                <div className="nx-fb-profile__composer">
++                  <Avatar user={user} className="nx-fb-profile__mini-avatar" fallbackClassName="nx-fb-profile__mini-fallback" />
++                  <div className="nx-fb-profile__composer-placeholder">Bài viết trên trang cá nhân của bạn</div>
+                 </div>
+-              </div>
+-            </section>
+-
+-            {postsLoading ? (
+-              <section className="nx-fb-profile__card nx-fb-profile__loading">
+-                Đang tải bài viết…
+               </section>
+-            ) : null}
+ 
+-            {!postsLoading && posts.length === 0 ? (
+-              <section className="nx-fb-profile__card nx-fb-profile__empty">
+-                Chưa có bài viết nào.
+-              </section>
+-            ) : null}
++              {postsLoading && <section className="nx-fb-profile__card nx-fb-profile__loading">Đang tải bài viết…</section>}
++              {!postsLoading && posts.length === 0 && <section className="nx-fb-profile__card nx-fb-profile__empty">Chưa có bài viết nào.</section>}
++              {posts.map((post) => <PostCard
++                key={getId(post) || post.createdAt}
++                profileMode
++                post={post}
++                user={user}
++                onLike={() => likePost(post)}
++                onComment={(payload) => commentPost(post, payload)}
++                onUpdated={(updated) => setPosts((list) => list.map((item) => String(item._id) === String(updated._id) ? updated : item))}
++                onDeleted={(postId) => setPosts((list) => list.filter((item) => String(item._id) !== String(postId)))}
++              />)}
++            </>}
++
++            {activeTab === 'about' && <section className="nx-fb-profile__card nx-fb-profile__tab-panel">
++              <h2>Giới thiệu</h2>
++              <div className="nx-fb-profile__info-list">
++                <div className="nx-fb-profile__info-row"><span className="nx-fb-profile__info-icon">👤</span><span>{getName(user)}</span></div>
++                <div className="nx-fb-profile__info-row"><span className="nx-fb-profile__info-icon">＠</span><span>{user?.username ? `@${user.username}` : 'Chưa đặt username'}</span></div>
++                <div className="nx-fb-profile__info-row"><span className="nx-fb-profile__info-icon">✍️</span><span>{user?.bio || 'Chưa có giới thiệu.'}</span></div>
++              </div>
++            </section>}
++
++            {activeTab === 'friends' && <section className="nx-fb-profile__card nx-fb-profile__tab-panel">
++              <h2>Bạn bè</h2>
++              <div className="nx-fb-profile__friends-grid">
++                {(user?.friends || []).filter((friend) => friend && typeof friend === 'object').map((friend) => <a key={friend._id} href={`/users/${friend._id}`} className="nx-fb-profile__friend-card">
++                  <Avatar user={friend} className="nx-fb-profile__friend-avatar" fallbackClassName="nx-fb-profile__friend-fallback" />
++                  <b>{getName(friend)}</b>
++                </a>)}
++              </div>
++              {(user?.friends || []).length === 0 && <div className="nx-fb-profile__empty">Danh sách bạn bè đang trống.</div>}
++            </section>}
+ 
+-            {posts.map((post) => {
+-              const image = firstPostImage(post);
+-              const likes = Array.isArray(post?.likes) ? post.likes.length : Number(post?.likeCount || 0);
+-              const comments = Array.isArray(post?.comments) ? post.comments.length : Number(post?.commentCount || 0);
+-
+-              return (
+-                <article className="nx-fb-profile__card nx-fb-profile__post" key={getId(post) || post.createdAt}>
+-                  <header className="nx-fb-profile__post-head">
+-                    <Avatar
+-                      user={user}
+-                      className="nx-fb-profile__mini-avatar"
+-                      fallbackClassName="nx-fb-profile__mini-fallback"
+-                    />
+-                    <div className="nx-fb-profile__post-meta">
+-                      <strong>{getName(user)}</strong>
+-                      <span>{formatDate(post?.createdAt)} · 🌐</span>
+-                    </div>
+-                  </header>
+-
+-                  {post?.text || post?.content ? (
+-                    <div className="nx-fb-profile__post-text">
+-                      {post.text || post.content}
+-                    </div>
+-                  ) : null}
+-
+-                  {image ? (
+-                    <img className="nx-fb-profile__post-image" src={image} alt="" />
+-                  ) : null}
+-
+-                  <div className="nx-fb-profile__post-stats">
+-                    <span>👍 {likes}</span>
+-                    <span>{comments} bình luận</span>
+-                  </div>
+-
+-                  <div className="nx-fb-profile__post-actions">
+-                    <button type="button" className="nx-fb-profile__post-action">👍 Thích</button>
+-                    <button type="button" className="nx-fb-profile__post-action">💬 Bình luận</button>
+-                    <button type="button" className="nx-fb-profile__post-action">↗ Chia sẻ</button>
+-                  </div>
+-                </article>
+-              );
+-            })}
++            {activeTab === 'media' && <section className="nx-fb-profile__card nx-fb-profile__tab-panel">
++              <div className="nx-fb-profile__panel-head"><div><h2>Ảnh và video</h2><p>Tất cả nội dung đa phương tiện đã đăng.</p></div><b>{mediaItems.length}</b></div>
++              {mediaItems.length === 0 ? <div className="nx-fb-profile__empty">Chưa có ảnh hoặc video.</div> : <div className="nx-fb-profile__media-grid">
++                {mediaItems.map((item) => item.type === 'video'
++                  ? <video key={item.key} src={item.url} poster={item.thumbUrl || undefined} controls playsInline preload="metadata" />
++                  : <a key={item.key} href={item.url} target="_blank" rel="noreferrer"><img src={item.thumbUrl || item.url} alt="Ảnh đã đăng" loading="lazy" /></a>)}
++              </div>}
++            </section>}
+           </main>
+         </div>
+       </div>
+diff -ruN a/apps/web/src/pages/TimelinePage.jsx b/apps/web/src/pages/TimelinePage.jsx
+--- a/apps/web/src/pages/TimelinePage.jsx	2026-07-18 06:11:57.057093941 +0000
++++ b/apps/web/src/pages/TimelinePage.jsx	2026-07-18 06:11:57.067303339 +0000
+@@ -305,6 +305,7 @@
+   const [media, setMedia] = useState(null);
+   const [active, setActive] = useState(null);
+   const [reply, setReply] = useState('');
++  const [privacy, setPrivacy] = useState('friends');
+   const [error, setError] = useState('');
+   const [busy, setBusy] = useState(false);
+   const fileRef = useRef(null);
+@@ -353,7 +354,7 @@
+   const createStory = async () => {
+     if (!text.trim() && !media) return;
+     try {
+-      const { data } = await api.post('/stories', { text, media: media ? [media] : [], privacy: 'friends' });
++      const { data } = await api.post('/stories', { text, media: media ? [media] : [], privacy });
+       setStories((list) => [data, ...list]);
+       setText(''); setMedia(null); setError('');
+     } catch (createError) { setError(errorMessage(createError)); }
+@@ -408,6 +409,11 @@
+     }}
+   />
+ 
++  <select className="story-privacy" value={privacy} onChange={(event) => setPrivacy(event.target.value)} disabled={busy} aria-label="Quyền riêng tư story">
++    <option value="friends">Bạn bè</option>
++    <option value="public">Công khai</option>
++  </select>
++
+   <button
+     type="button"
+     className="story-send"
+@@ -691,7 +697,7 @@
+     {editing ? <div className="post-edit-box"><textarea value={draft} onChange={(event) => setDraft(event.target.value)} rows="4" /><div><button className="soft-btn" onClick={() => setEditing(false)}>Hủy</button><button className="primary-btn" onClick={saveEdit}>Lưu</button></div></div> : post.repostOf ? <><PostContent post={{ text: post.text }} /><RepostPreview post={post.repostOf} /></> : <PostContent post={post} />}
+     <div className="post-counts"><span>{post.likes.length} lượt thích</span><span>{post.comments.length} bình luận · {source?.shareCount || 0} lượt chia sẻ</span></div>
+     <div className="post-actions"><button className={liked ? 'liked' : ''} onClick={onLike}><Heart fill={liked ? 'currentColor' : 'none'} /> Thích</button><button onClick={() => document.getElementById(inputId)?.focus()}><MessageCircle /> Bình luận</button><button onClick={onShare}><Share2 /> Chia sẻ</button></div>
+-    <CommentsSection comments={post.comments || []} user={user} onSubmit={onComment} inputId={inputId} />
++    <CommentsSection postId={post._id} comments={post.comments || []} user={user} onSubmit={onComment} inputId={inputId} />
+   </article>;
+ }
+ 
+@@ -709,11 +715,11 @@
+       <div className="short-video-copy"><div className="short-author"><Avatar user={post.author} size={42} /><div><b>{post.author?.displayName}</b>{post.repostOf && <span><Repeat2 size={13} /> Đăng lại từ {source?.author?.displayName}</span>}</div></div>{displayText && <p>{displayText}</p>}</div>
+       <div className="short-video-actions"><button className={liked ? 'liked' : ''} onClick={onLike}><Heart fill={liked ? 'currentColor' : 'none'} /><span>{post.likes.length}</span></button><button onClick={() => document.getElementById(inputId)?.focus()}><MessageCircle /><span>{post.comments.length}</span></button><button onClick={onShare}><Share2 /><span>{source?.shareCount || 0}</span></button></div>
+     </div>
+-    <CommentsSection compact comments={post.comments || []} user={user} onSubmit={onComment} inputId={inputId} />
++    <CommentsSection postId={post._id} compact comments={post.comments || []} user={user} onSubmit={onComment} inputId={inputId} />
+   </article>;
+ }
+ 
+-function CommentsSection({ comments, user, onSubmit, inputId, compact = false }) {
++function CommentsSection({ postId, comments, user, onSubmit, inputId, compact = false }) {
+   const [text, setText] = useState('');
+   const [showAllComments, setShowAllComments] = useState(false);
+   const [replyTo, setReplyTo] = useState(null);
+@@ -722,21 +728,24 @@
+   const [busy, setBusy] = useState(false);
+   const [recording, setRecording] = useState(false);
+   const [error, setError] = useState('');
++  const [localComments, setLocalComments] = useState(comments || []);
+   const fileRef = useRef(null);
+   const recorderRef = useRef(null);
+ 
+-  const commentById = useMemo(() => new Map((comments || []).map((item) => [String(item._id), item])), [comments]);
++  useEffect(() => setLocalComments(comments || []), [comments]);
++
++  const commentById = useMemo(() => new Map((localComments || []).map((item) => [String(item._id), item])), [localComments]);
+ 
+   const children = useMemo(() => {
+     const map = new Map();
+-    for (const item of comments) {
++    for (const item of localComments) {
+       const parent = item.parentComment ? String(item.parentComment?._id || item.parentComment) : 'root';
+       if (!map.has(parent)) map.set(parent, []);
+       map.get(parent).push(item);
+     }
+     for (const list of map.values()) list.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+     return map;
+-  }, [comments]);
++  }, [localComments]);
+ 
+   const uploadAttachment = async (file, kind) => {
+     setBusy(true); setError('');
+@@ -781,7 +790,8 @@
+     if (!payload.text && !(payload.media || []).length) return;
+     setBusy(true); setError('');
+     try {
+-      await onSubmit(payload);
++      const created = await onSubmit(payload);
++      if (created?._id) setLocalComments((list) => list.some((item) => String(item._id) === String(created._id)) ? list : [...list, created]);
+       setText(''); setAttachment(null); setReplyTo(null); setPicker(false);
+     } catch (submitError) { setError(errorMessage(submitError)); }
+     finally { setBusy(false); }
+@@ -794,13 +804,27 @@
+     parentCommentId: replyTo?._id || null
+   });
+ 
++  const likeComment = async (comment) => {
++    try {
++      const { data } = await api.post(`/posts/${postId}/comments/${comment._id}/like`);
++      setLocalComments((list) => list.map((item) => String(item._id) === String(comment._id) ? {
++        ...item,
++        likes: data.liked
++          ? [...(item.likes || []), user._id]
++          : (item.likes || []).filter((id) => String(id?._id || id) !== String(user._id))
++      } : item));
++    } catch (likeError) {
++      setError(errorMessage(likeError));
++    }
++  };
++
+   const roots = children.get('root') || [];
+   const visibleRoots = showAllComments || compact ? roots : roots.slice(-3);
+   const hiddenRootCount = Math.max(0, roots.length - visibleRoots.length);
+   return <section className={`comments-section ${compact ? 'compact' : ''}`}>
+     {!compact && hiddenRootCount > 0 && <button className="comments-show-more" type="button" onClick={() => setShowAllComments(true)}>Xem thêm {hiddenRootCount} bình luận</button>}
+-    {comments.length > 0 && <div className="comment-thread-list">
+-      {visibleRoots.map((item) => <CommentNode key={item._id} item={item} parent={commentById.get(String(item.parentComment?._id || item.parentComment))} childrenMap={children} commentById={commentById} onReply={(comment) => {
++    {localComments.length > 0 && <div className="comment-thread-list">
++      {visibleRoots.map((item) => <CommentNode key={item._id} item={item} parent={commentById.get(String(item.parentComment?._id || item.parentComment))} childrenMap={children} commentById={commentById} onLike={likeComment} currentUserId={user._id} onReply={(comment) => {
+         setReplyTo(comment);
+         window.requestAnimationFrame(() => document.getElementById(inputId)?.focus());
+       }} />)}
+@@ -840,11 +864,13 @@
+   </section>;
+ }
+ 
+-function CommentNode({ item, parent, childrenMap, commentById, onReply, depth = 0 }) {
++function CommentNode({ item, parent, childrenMap, commentById, onReply, onLike, currentUserId, depth = 0 }) {
+   const navigate = useNavigate();
+   const replies = childrenMap.get(String(item._id)) || [];
+   const replyTarget = parent?.user?.displayName;
+   const commentUserId = item.user?._id || item.user?.id;
++  const likes = item.likes || [];
++  const liked = likes.some((id) => String(id?._id || id) === String(currentUserId));
+   const openUserProfile = () => {
+     if (commentUserId) navigate(`/users/${commentUserId}`);
+   };
+@@ -858,8 +884,8 @@
+         {replyTarget && <span className="comment-reply-target">Trả lời <b>{replyTarget}</b></span>}
+         <CommentContent item={item} />
+       </div>
+-      <div className="comment-meta-row"><time>{formatDistanceToNow(new Date(item.createdAt), { addSuffix: true, locale: vi })}</time><button onClick={() => onReply(item)}><Reply size={12} /> Trả lời</button></div>
+-      {replies.length > 0 && <div className="comment-replies">{replies.map((reply) => <CommentNode key={reply._id} item={reply} parent={item} childrenMap={childrenMap} commentById={commentById} onReply={onReply} depth={depth + 1} />)}</div>}
++      <div className="comment-meta-row"><time>{formatDistanceToNow(new Date(item.createdAt), { addSuffix: true, locale: vi })}</time><button className={liked ? 'liked' : ''} onClick={() => onLike(item)}><Heart size={12} fill={liked ? 'currentColor' : 'none'} /> Thích{likes.length ? ` ${likes.length}` : ''}</button><button onClick={() => onReply(item)}><Reply size={12} /> Trả lời</button></div>
++      {replies.length > 0 && <div className="comment-replies">{replies.map((reply) => <CommentNode key={reply._id} item={reply} parent={item} childrenMap={childrenMap} commentById={commentById} onReply={onReply} onLike={onLike} currentUserId={currentUserId} depth={depth + 1} />)}</div>}
+     </div>
+   </div>;
+ }
+diff -ruN a/apps/web/src/pages/UserProfilePage.jsx b/apps/web/src/pages/UserProfilePage.jsx
+--- a/apps/web/src/pages/UserProfilePage.jsx	2026-07-18 06:11:57.097095788 +0000
++++ b/apps/web/src/pages/UserProfilePage.jsx	2026-07-18 06:11:57.105478074 +0000
+@@ -1,5 +1,5 @@
+ import { useEffect, useState } from 'react';
+-import { ArrowLeft, MessageCircle, Phone, UserCheck, UserPlus } from 'lucide-react';
++import { ArrowLeft, Ban, MessageCircle, MoreHorizontal, Phone, UserCheck, UserMinus, UserPlus } from 'lucide-react';
+ import { useNavigate, useParams } from 'react-router-dom';
+ import { api, errorMessage } from '../services/api';
+ import { useAuth } from '../context/AuthContext';
+@@ -13,6 +13,7 @@
+   const [profile, setProfile] = useState(null);
+   const [posts, setPosts] = useState([]);
+   const [status, setStatus] = useState('');
++  const [menuOpen, setMenuOpen] = useState(false);
+ 
+   const load = async () => {
+     try {
+@@ -39,6 +40,26 @@
+     }
+   };
+ 
++  const unfriend = async () => {
++    try {
++      setStatus((await api.delete(`/users/friends/${userId}`)).data.message);
++      setMenuOpen(false);
++      await load();
++    } catch (error) {
++      setStatus(errorMessage(error));
++    }
++  };
++
++  const blockUser = async () => {
++    if (!window.confirm(`Chặn ${profile?.displayName || 'người dùng này'}? Hai bên sẽ không thể xem hồ sơ, bài viết và story của nhau.`)) return;
++    try {
++      await api.post(`/users/block/${userId}`);
++      navigate('/timeline', { replace: true });
++    } catch (error) {
++      setStatus(errorMessage(error));
++    }
++  };
++
+   const openChat = async () => {
+     try {
+       const { data } = await api.post('/conversations/direct', { userId });
+@@ -80,8 +101,15 @@
+         <div className="public-profile-actions">
+           <button className="primary-small" onClick={openChat}><MessageCircle /> Nhắn tin</button>
+           {!profile.relationship?.isFriend && !profile.relationship?.outgoing && <button className="secondary-btn" onClick={requestFriend}><UserPlus /> Kết bạn</button>}
+-          {profile.relationship?.isFriend && <button className="friend-state" disabled><UserCheck /> Bạn bè</button>}
++          {profile.relationship?.isFriend && <button className="friend-state" onClick={unfriend} title="Hủy kết bạn"><UserCheck /> Bạn bè</button>}
+           {profile.relationship?.outgoing && <button className="friend-state" disabled><Phone /> Đã gửi lời mời</button>}
++          <div className="public-profile-more">
++            <button className="secondary-btn" onClick={() => setMenuOpen((value) => !value)} aria-label="Tùy chọn hồ sơ"><MoreHorizontal /></button>
++            {menuOpen && <div className="public-profile-more-menu">
++              {profile.relationship?.isFriend && <button onClick={unfriend}><UserMinus /> Hủy kết bạn</button>}
++              <button className="danger" onClick={blockUser}><Ban /> Chặn người dùng</button>
++            </div>}
++          </div>
+         </div>
+       </div>
+       {status && <div className="form-status profile-public-status">{status}</div>}

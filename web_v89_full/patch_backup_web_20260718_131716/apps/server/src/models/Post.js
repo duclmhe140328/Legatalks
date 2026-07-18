@@ -15,7 +15,6 @@ const commentSchema = new mongoose.Schema({
   kind: { type: String, enum: ['text', 'sticker', 'image', 'audio'], default: 'text' },
   text: { type: String, default: '', maxlength: 2000 },
   media: [commentMediaSchema],
-  likes: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   createdAt: { type: Date, default: Date.now }
 });
 
