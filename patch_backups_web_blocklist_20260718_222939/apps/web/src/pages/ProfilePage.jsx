@@ -577,85 +577,6 @@ const css = `
   padding: 12px 16px;
 }
 
-
-.nx-fb-blocked-list {
-  display: grid;
-  gap: 10px;
-}
-
-.nx-fb-blocked-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-  border: 1px solid var(--fb-line);
-  border-radius: 12px;
-  padding: 10px;
-  background: #fff;
-}
-
-.nx-fb-blocked-avatar,
-.nx-fb-blocked-fallback {
-  width: 48px;
-  height: 48px;
-  flex: 0 0 48px;
-  border-radius: 50%;
-  object-fit: cover;
-  background: #e7f3ff;
-}
-
-.nx-fb-blocked-fallback {
-  display: grid;
-  place-items: center;
-  color: var(--fb-blue);
-  font-weight: 900;
-}
-
-.nx-fb-blocked-copy {
-  min-width: 0;
-  flex: 1;
-}
-
-.nx-fb-blocked-copy strong,
-.nx-fb-blocked-copy span {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.nx-fb-blocked-copy strong { font-size: 14px; }
-.nx-fb-blocked-copy span {
-  margin-top: 3px;
-  color: var(--fb-muted);
-  font-size: 12px;
-}
-
-.nx-fb-blocked-empty {
-  border-radius: 12px;
-  padding: 28px 16px;
-  background: #f8fafc;
-  color: var(--fb-muted);
-  text-align: center;
-  font-weight: 700;
-}
-
-.nx-fb-profile__button.is-danger-soft {
-  background: #fff1f2;
-  color: #be123c;
-}
-
-.nx-fb-profile__button.is-danger-soft:hover { background: #ffe4e6; }
-
-@media (max-width: 560px) {
-  .nx-fb-blocked-row {
-    align-items: flex-start;
-    flex-wrap: wrap;
-  }
-
-  .nx-fb-blocked-row .nx-fb-profile__button { width: 100%; }
-}
-
 @media (max-width: 900px) {
   .nx-fb-profile__identity {
     align-items: center;
@@ -845,12 +766,6 @@ export default function ProfilePage() {
   const [showPassword, setShowPassword] = useState(false);
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [passwordMessage, setPasswordMessage] = useState({ type: '', text: '' });
-
-  const [blockedOpen, setBlockedOpen] = useState(false);
-  const [blockedUsers, setBlockedUsers] = useState([]);
-  const [blockedLoading, setBlockedLoading] = useState(false);
-  const [blockedBusyId, setBlockedBusyId] = useState('');
-  const [blockedMessage, setBlockedMessage] = useState('');
 
   const userId = useMemo(() => getId(user), [user]);
 
@@ -1097,48 +1012,6 @@ export default function ProfilePage() {
     }
   }
 
-  async function loadBlockedUsers() {
-    setBlockedLoading(true);
-    setBlockedMessage('');
-
-    try {
-      const { data } = await api.get('/users/blocked');
-      setBlockedUsers(asList(data));
-    } catch (error) {
-      setBlockedUsers([]);
-      setBlockedMessage(cleanError(error));
-    } finally {
-      setBlockedLoading(false);
-    }
-  }
-
-  async function openBlockedUsers() {
-    setBlockedOpen(true);
-    await loadBlockedUsers();
-  }
-
-  async function unblockUser(blockedUser) {
-    const blockedId = getId(blockedUser);
-    if (!blockedId || blockedBusyId) return;
-
-    const confirmed = window.confirm(`Bỏ chặn ${getName(blockedUser)}?`);
-    if (!confirmed) return;
-
-    setBlockedBusyId(blockedId);
-    setBlockedMessage('');
-
-    try {
-      await api.delete(`/users/block/${blockedId}`);
-      setBlockedUsers((items) => items.filter((item) => getId(item) !== blockedId));
-      setBlockedMessage(`Đã bỏ chặn ${getName(blockedUser)}.`);
-      await loadUser();
-    } catch (error) {
-      setBlockedMessage(cleanError(error));
-    } finally {
-      setBlockedBusyId('');
-    }
-  }
-
   if (loading && !user) {
     return (
       <div className="nx-fb-profile">
@@ -1202,9 +1075,6 @@ export default function ProfilePage() {
               </button>
               <button type="button" className="nx-fb-profile__button" onClick={openPassword}>
                 🔒 Đổi mật khẩu
-              </button>
-              <button type="button" className="nx-fb-profile__button is-danger-soft" onClick={openBlockedUsers}>
-                ⛔ Đã chặn
               </button>
             </div>
           </div>
@@ -1272,13 +1142,6 @@ export default function ProfilePage() {
                 onClick={openPassword}
               >
                 Đổi mật khẩu
-              </button>
-              <button
-                type="button"
-                className="nx-fb-profile__button is-danger-soft nx-fb-profile__full"
-                onClick={openBlockedUsers}
-              >
-                Xem danh sách đã chặn
               </button>
             </section>
           </aside>
@@ -1388,62 +1251,6 @@ export default function ProfilePage() {
           </label>
 
           {editMessage ? <div className="nx-fb-modal__message">{editMessage}</div> : null}
-        </Modal>
-      ) : null}
-
-      {blockedOpen ? (
-        <Modal
-          title="Danh sách đã chặn"
-          onClose={() => !blockedBusyId && setBlockedOpen(false)}
-        >
-          <div className="nx-fb-modal__notice">
-            Người đã chặn không thể xem trang cá nhân, bài viết, story hoặc nhắn tin với bạn. Bỏ chặn không tự động kết bạn lại.
-          </div>
-
-          {blockedLoading ? (
-            <div className="nx-fb-profile__loading">Đang tải danh sách…</div>
-          ) : null}
-
-          {!blockedLoading && blockedUsers.length === 0 ? (
-            <div className="nx-fb-blocked-empty">Bạn chưa chặn người dùng nào.</div>
-          ) : null}
-
-          {!blockedLoading && blockedUsers.length > 0 ? (
-            <div className="nx-fb-blocked-list">
-              {blockedUsers.map((blockedUser) => {
-                const blockedId = getId(blockedUser);
-                const busy = blockedBusyId === blockedId;
-
-                return (
-                  <div className="nx-fb-blocked-row" key={blockedId}>
-                    <Avatar
-                      user={blockedUser}
-                      className="nx-fb-blocked-avatar"
-                      fallbackClassName="nx-fb-blocked-fallback"
-                    />
-                    <div className="nx-fb-blocked-copy">
-                      <strong>{getName(blockedUser)}</strong>
-                      <span>{blockedUser?.username ? `@${blockedUser.username}` : 'Người dùng Legatalk'}</span>
-                    </div>
-                    <button
-                      type="button"
-                      className="nx-fb-profile__button is-danger-soft"
-                      disabled={Boolean(blockedBusyId)}
-                      onClick={() => unblockUser(blockedUser)}
-                    >
-                      {busy ? 'Đang bỏ chặn…' : 'Bỏ chặn'}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          ) : null}
-
-          {blockedMessage ? (
-            <div className={`nx-fb-modal__message ${blockedMessage.startsWith('Đã bỏ chặn') ? 'is-success' : ''}`}>
-              {blockedMessage}
-            </div>
-          ) : null}
         </Modal>
       ) : null}
 

@@ -1,4 +1,4 @@
-import express from 'express';
+﻿import express from 'express';
 import crypto from 'node:crypto';
 import User from '../models/User.js';
 import { requireAuth } from '../middleware/auth.js';
@@ -254,28 +254,6 @@ router.delete('/block/:userId', asyncHandler(async (req, res) => {
   req.user.blockedUsers.pull(req.params.userId);
   await req.user.save();
   res.json({ message: 'Đã bỏ chặn.' });
-}));
-
-
-router.get('/blocked', asyncHandler(async (req, res) => {
-  const blockedIds = Array.isArray(req.user.blockedUsers)
-    ? req.user.blockedUsers
-    : [];
-
-  if (blockedIds.length === 0) return res.json([]);
-
-  const users = await User.find({
-    _id: { $in: blockedIds },
-    isActive: { $ne: false },
-  }).select(publicFields);
-
-  const order = new Map(blockedIds.map((id, index) => [String(id), index]));
-  users.sort((left, right) => (
-    (order.get(String(left._id)) ?? Number.MAX_SAFE_INTEGER) -
-    (order.get(String(right._id)) ?? Number.MAX_SAFE_INTEGER)
-  ));
-
-  res.json(users);
 }));
 
 
