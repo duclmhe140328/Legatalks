@@ -282,61 +282,12 @@ router.get('/blocked', asyncHandler(async (req, res) => {
 router.post('/push-token', asyncHandler(async (req, res) => {
   const session = req.user.sessions.id(req.sessionId);
   if (!session) return res.status(404).json({ message: 'Không tìm thấy phiên đăng nhập.' });
-
-  const token = String(req.body.token || req.body.pushToken || '').trim();
-  const platform = String(req.body.platform || '').trim();
-  if (!token) return res.status(400).json({ message: 'Push token không hợp lệ.' });
-  if (!['web', 'android', 'ios'].includes(platform)) {
-    return res.status(400).json({ message: 'Nền tảng push không hợp lệ.' });
-  }
-
-  // Một FCM token đại diện cho đúng một app/device. Khi người dùng đổi tài
-  // khoản trên cùng điện thoại, gỡ token khỏi mọi session cũ trước khi gắn
-  // vào session hiện tại để không nhận thông báo của nick khác.
-  // Clear the same token from older sessions of the current account.
-  for (const item of req.user.sessions) {
-    if (String(item._id) !== String(req.sessionId) && item.pushToken === token) {
-      item.pushToken = undefined;
-      item.pushPlatform = undefined;
-      item.pushEnvironment = undefined;
-    }
-  }
-
-  // Clear it from every other account as well. Querying with _id != current
-  // avoids saving a stale duplicate of req.user afterwards.
-  const owners = await User.find({
-    _id: { $ne: req.user._id },
-    'sessions.pushToken': token
-  }).select('sessions');
-  for (const owner of owners) {
-    let changed = false;
-    for (const item of owner.sessions) {
-      if (item.pushToken === token) {
-        item.pushToken = undefined;
-        item.pushPlatform = undefined;
-        item.pushEnvironment = undefined;
-        changed = true;
-      }
-    }
-    if (changed) await owner.save();
-  }
-
-  session.pushToken = token;
-  session.pushPlatform = platform;
-  session.pushEnvironment = req.body.environment || req.body.pushEnvironment || 'development';
+  if (!['web', 'android', 'ios'].includes(req.body.platform)) return res.status(400).json({ message: 'Nền tảng push không hợp lệ.' });
+  session.pushToken = req.body.token;
+  session.pushPlatform = req.body.platform;
+  session.pushEnvironment = req.body.environment || 'development';
   await req.user.save();
-  res.json({ message: 'Đã đăng ký push token.', userId: req.user._id, sessionId: req.sessionId });
-}));
-
-router.delete('/push-token', asyncHandler(async (req, res) => {
-  const session = req.user.sessions.id(req.sessionId);
-  if (session) {
-    session.pushToken = undefined;
-    session.pushPlatform = undefined;
-    session.pushEnvironment = undefined;
-    await req.user.save();
-  }
-  res.json({ message: 'Đã gỡ push token khỏi tài khoản này.' });
+  res.json({ message: 'Đã đăng ký push token.' });
 }));
 
 router.get('/qr', (req, res) => {

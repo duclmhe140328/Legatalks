@@ -19,17 +19,6 @@ const meetingRtcRoom = (meetingId) => `meeting-rtc:${meetingId}`;
 export function configureSockets(io) {
   const onlineCounts = new Map();
   const liveAudience = new Map();
-  const callDisconnectTimers = new Map();
-
-  const callDisconnectKey = (callSessionId, userId) =>
-    `${String(callSessionId)}:${String(userId)}`;
-
-  const clearCallDisconnectGrace = (callSessionId, userId) => {
-    const key = callDisconnectKey(callSessionId, userId);
-    const timer = callDisconnectTimers.get(key);
-    if (timer) clearTimeout(timer);
-    callDisconnectTimers.delete(key);
-  };
   const staleCallTimer = setInterval(() => {
     expireStaleCalls(io).catch((error) => console.error('Expire stale calls error:', error.message));
   }, 10_000);
@@ -213,7 +202,6 @@ export function configureSockets(io) {
         const session = await CallSession.findOne({ _id: callSessionId, startedBy: userId, status: 'ringing' });
         if (!session) return ack?.({ ok: false, message: 'Cuộc gọi không hợp lệ hoặc đã kết thúc.' });
 
-        clearCallDisconnectGrace(session._id, userId);
         socket.join(callSessionRoom(session._id));
         socket.data.callSessionIds.add(String(session._id));
 
@@ -259,7 +247,6 @@ export function configureSockets(io) {
         await session.save();
         cancelIncomingCallPush({ session, userIds: [userId], status: 'active' })
           .catch((error) => console.error('Cancel incoming call push error:', error.message));
-        clearCallDisconnectGrace(session._id, userId);
         socket.join(callSessionRoom(session._id));
         socket.data.callSessionIds.add(String(session._id));
         io.to(`user:${session.startedBy}`).emit('call:accepted', { callSessionId: session._id, userId, displayName: socket.user.displayName });
@@ -296,7 +283,6 @@ export function configureSockets(io) {
       if (!conversation || !session) return ack?.({ ok: false, message: 'Cuộc gọi không hợp lệ hoặc đã kết thúc.' });
       const room = callRoom(callSessionId);
       const participantSockets = [...(io.sockets.adapter.rooms.get(room) || [])].filter((id) => id !== socket.id);
-      clearCallDisconnectGrace(callSessionId, userId);
       socket.join(room);
       socket.join(callSessionRoom(callSessionId));
       socket.data.callSessionIds.add(String(callSessionId));
@@ -312,112 +298,36 @@ export function configureSockets(io) {
     socket.on('webrtc:answer', ({ target, conversationId, callSessionId, sdp }) => io.to(target).emit('webrtc:answer', { from: socket.id, conversationId, callSessionId, sdp }));
     socket.on('webrtc:ice-candidate', ({ target, conversationId, callSessionId, candidate }) => io.to(target).emit('webrtc:ice-candidate', { from: socket.id, conversationId, callSessionId, candidate }));
 
-    const finalizeDisconnectedCall = async (callSessionId, disconnectedUserId) => {
-      const id = String(callSessionId || '');
-      if (!id) return;
-
-      const sessionRoom = callSessionRoom(id);
-      const connectedSocketIds = [...(io.sockets.adapter.rooms.get(sessionRoom) || [])];
-      const sameUserReconnected = connectedSocketIds.some((socketId) =>
-        String(io.sockets.sockets.get(socketId)?.user?._id || '') === String(disconnectedUserId)
-      );
-      if (sameUserReconnected) return;
-
-      const session = await CallSession.findById(id);
-      if (!session || TERMINAL_CALL_STATUSES.includes(session.status)) return;
-
-      const participant = [...session.participants]
-        .reverse()
-        .find((item) => String(item.user) === String(disconnectedUserId) && !item.leftAt);
-      if (participant) participant.leftAt = new Date();
-      await session.save();
-
-      io.to(sessionRoom).emit('call:participant-left', {
-        callSessionId: id,
-        userId: String(disconnectedUserId),
-        reason: 'socket-disconnected'
-      });
-
-      const conversation = await Conversation.findById(session.conversation).select('type');
-      const remainingCallSockets = connectedSocketIds.filter((socketId) => {
-        const peer = io.sockets.sockets.get(socketId);
-        return peer?.rooms?.has(sessionRoom);
-      });
-      const mustEndForEveryone = conversation?.type !== 'group' || remainingCallSockets.length === 0;
-      if (mustEndForEveryone) {
-        await finalizeCall({
-          io,
-          session,
-          status: session.status === 'ringing' ? 'missed' : 'ended',
-          endedBy: disconnectedUserId
-        });
-      }
-    };
-
     const leaveCallSession = async (callSessionId, { disconnecting = false } = {}) => {
       const id = String(callSessionId || '');
       if (!id) return;
-
-      socket.data.callSessionIds.delete(id);
-
-      if (disconnecting) {
-        // Opening the native Jitsi activity can briefly reconnect Socket.IO on
-        // Android. Do not end the call immediately during that transition.
-        clearCallDisconnectGrace(id, userId);
-        const key = callDisconnectKey(id, userId);
-        const timer = setTimeout(() => {
-          callDisconnectTimers.delete(key);
-          finalizeDisconnectedCall(id, userId)
-            .catch((error) => console.error('Call disconnect grace cleanup error:', error.message));
-        }, 30_000);
-        timer.unref?.();
-        callDisconnectTimers.set(key, timer);
-        return;
-      }
-
-      clearCallDisconnectGrace(id, userId);
       const room = callRoom(id);
-      const sessionRoom = callSessionRoom(id);
       const session = await CallSession.findById(id);
       if (!session || TERMINAL_CALL_STATUSES.includes(session.status)) {
-        socket.leave(room);
-        socket.leave(sessionRoom);
+        socket.data.callSessionIds.delete(id);
         return;
       }
 
-      const participant = [...session.participants]
-        .reverse()
-        .find((item) => String(item.user) === userId && !item.leftAt);
+      const participant = [...session.participants].reverse().find((item) => String(item.user) === userId && !item.leftAt);
       if (participant) participant.leftAt = new Date();
       await session.save();
 
-      const sessionSocketIds = [...(io.sockets.adapter.rooms.get(sessionRoom) || [])]
-        .filter((socketId) => socketId !== socket.id);
-      const sameUserStillConnected = sessionSocketIds.some((socketId) =>
-        String(io.sockets.sockets.get(socketId)?.user?._id || '') === userId
-      );
-
+      const roomSocketIds = [...(io.sockets.adapter.rooms.get(room) || [])].filter((socketId) => socketId !== socket.id);
+      const sameUserStillConnected = roomSocketIds.some((socketId) => String(io.sockets.sockets.get(socketId)?.user?._id || '') === userId);
       if (!sameUserStillConnected) {
-        io.to(sessionRoom).emit('call:participant-left', {
-          callSessionId: id,
-          socketId: socket.id,
-          userId,
-          reason: 'explicit-leave'
-        });
+        socket.to(room).emit('call:participant-left', { socketId: socket.id, userId });
         const conversation = await Conversation.findById(session.conversation).select('type');
-        const mustEndForEveryone = conversation?.type !== 'group' || sessionSocketIds.length === 0;
+        const mustEndForEveryone = conversation?.type !== 'group' || roomSocketIds.length === 0;
         if (mustEndForEveryone) {
-          await finalizeCall({
-            io,
-            session,
-            status: session.status === 'ringing' ? 'missed' : 'ended',
-            endedBy: userId
-          });
+          await finalizeCall({ io, session, status: session.status === 'ringing' ? 'missed' : 'ended', endedBy: userId });
         }
       }
 
-      socket.leave(room);
-      socket.leave(sessionRoom);
+      if (!disconnecting) {
+        socket.leave(room);
+        socket.leave(callSessionRoom(id));
+      }
+      socket.data.callSessionIds.delete(id);
     };
 
     socket.on('call:leave', async ({ callSessionId }, ack) => {

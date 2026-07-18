@@ -18,7 +18,7 @@ import App from './App';
 import './styles.css';
 import './facebook-social-spec.css';
 
-window.__NEXORA_BUILD__ = 'web-v8.6-call-profile-cache-fcm-owner-2026-07-18';
+window.__NEXORA_BUILD__ = 'web-v8.5-native-call-mobile-sync-2026-06-26';
 console.info('[Nexora build]', window.__NEXORA_BUILD__);
 
 ReactDOM.createRoot(document.getElementById('root')).render(
@@ -30,24 +30,5 @@ ReactDOM.createRoot(document.getElementById('root')).render(
 );
 
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', async () => {
-    try {
-      const registration = await navigator.serviceWorker.register('/sw.js', {
-        scope: '/',
-        updateViaCache: 'none',
-      });
-      await registration.update();
-    } catch (error) {
-      console.warn('Service worker update failed', error?.message || error);
-    }
-  });
-
-  navigator.serviceWorker.addEventListener('message', (event) => {
-    if (event.data?.type !== 'LEGATALK_SW_ACTIVATED') return;
-    const version = String(event.data.version || 'unknown');
-    const key = `legatalk-sw-reloaded:${version}`;
-    if (sessionStorage.getItem(key)) return;
-    sessionStorage.setItem(key, '1');
-    window.location.reload();
-  });
+  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
 }

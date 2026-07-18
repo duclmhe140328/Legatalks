@@ -102,7 +102,6 @@ export function SocketProvider({ children }) {
       });
     };
 
-    const onConnect = () => syncPresence();
     const onPresence = ({ userId, online }) => {
       setOnlineUsers((current) => {
         const next = new Set(current);
@@ -133,8 +132,14 @@ export function SocketProvider({ children }) {
     };
 
     const onIncomingCall = (payload) => {
-      const id = String(payload.callSessionId || '');
-      if (terminalCallIds.current.has(id)) return;
+      const id = String(payload?.callSessionId || '');
+      if (!id || terminalCallIds.current.has(id)) return;
+
+      // API /calls/pending và Socket có thể cùng trả về một cuộc gọi.
+      // Không mở hai popup hoặc phát chuông hai lần cho cùng một session.
+      if (String(incomingCallRef.current?.callSessionId || '') === id) return;
+      if (String(activeCallRef.current?.callSessionId || '') === id) return;
+
       if (activeCallRef.current) {
         client.emit('call:decline', { callSessionId: payload.callSessionId });
         return;
@@ -146,9 +151,62 @@ export function SocketProvider({ children }) {
         body: `${payload.from?.displayName || 'Có người'} đang gọi cho bạn`,
         icon: payload.from?.avatar,
         tag: `call-${payload.callSessionId}`,
-        path: '/chats',
-        data: { callSessionId: payload.callSessionId }
+        path: `/chats?incomingCall=${encodeURIComponent(payload.callSessionId)}`,
+        data: {
+          callSessionId: payload.callSessionId,
+          conversationId: payload.conversationId,
+          mode: payload.mode,
+          expiresAt: payload.expiresAt
+        }
       });
+    };
+
+    const onServiceWorkerMessage = (event) => {
+      const message = event?.data || {};
+      const payload = message.payload || {};
+      const data = payload.data || message.data || {};
+      const type = String(data.type || payload.type || '');
+
+      if (type === 'incoming_call') {
+        onIncomingCall({
+          callSessionId: data.callSessionId,
+          conversationId: data.conversationId,
+          mode: data.mode || 'voice',
+          startedAt: data.startedAt,
+          expiresAt: data.expiresAt,
+          from: {
+            displayName: data.callerName || 'Người gọi',
+            avatar: data.callerAvatar || ''
+          }
+        });
+      } else if (type === 'call_terminal' || type === 'call_cancel') {
+        finishCall('Cuộc gọi đã kết thúc', data.callSessionId, data.status || 'ended');
+      } else if (message.type === 'NEXORA_CALL_NOTIFICATION_CLICK') {
+        void syncPendingCall();
+      }
+    };
+
+    const syncPendingCall = async () => {
+      try {
+        const { data } = await api.get('/calls/pending');
+        if (data?.call) onIncomingCall(data.call);
+      } catch (error) {
+        // Mất mạng hoặc token đang refresh không được phép làm socket ngắt.
+        if (error?.response?.status !== 401) {
+          console.debug('Pending call sync skipped:', errorMessage(error));
+        }
+      }
+    };
+
+    const syncForegroundState = () => {
+      if (document.hidden) return;
+      syncPresence();
+      void syncPendingCall();
+    };
+
+    const onConnect = () => {
+      syncPresence();
+      void syncPendingCall();
     };
 
     const onAccepted = ({ callSessionId, displayName }) => {
@@ -181,9 +239,7 @@ export function SocketProvider({ children }) {
       if (conversationId) client.emit('conversation:join', { conversationId });
     };
 
-    const onVisibility = () => {
-      if (!document.hidden) syncPresence();
-    };
+    const onVisibility = () => syncForegroundState();
 
     client.on('connect', onConnect);
     client.on('presence:snapshot', applyPresenceSnapshot);
@@ -197,16 +253,18 @@ export function SocketProvider({ children }) {
     client.on('call:terminal', onEnded);
     client.on('call:answered-elsewhere', onAnsweredElsewhere);
     client.on('group:joined', onGroupJoined);
-    window.addEventListener('focus', syncPresence);
+    window.addEventListener('focus', syncForegroundState);
     document.addEventListener('visibilitychange', onVisibility);
+    navigator.serviceWorker?.addEventListener('message', onServiceWorkerMessage);
     const presenceTimer = window.setInterval(syncPresence, 15000);
 
     return () => {
       stopRingtone();
       window.clearTimeout(closeTimer.current);
       window.clearInterval(presenceTimer);
-      window.removeEventListener('focus', syncPresence);
+      window.removeEventListener('focus', syncForegroundState);
       document.removeEventListener('visibilitychange', onVisibility);
+      navigator.serviceWorker?.removeEventListener('message', onServiceWorkerMessage);
       client.off('connect', onConnect);
       client.off('presence:snapshot', applyPresenceSnapshot);
       client.off('presence:update', onPresence);
@@ -229,7 +287,7 @@ export function SocketProvider({ children }) {
   // Lớp dự phòng: nếu event WebSocket bị lỡ đúng lúc nhận máy/kết thúc,
   // client vẫn hỏi trạng thái authoritative từ server và tự đóng trong ~1 giây.
   useEffect(() => {
-    const callSessionId = activeCall?.callSessionId;
+    const callSessionId = activeCall?.callSessionId || incomingCall?.callSessionId;
     if (!callSessionId) return undefined;
     let cancelled = false;
 
@@ -259,7 +317,7 @@ export function SocketProvider({ children }) {
       window.removeEventListener('focus', onFocus);
       document.removeEventListener('visibilitychange', onFocus);
     };
-  }, [activeCall?.callSessionId, finishCall]);
+  }, [activeCall?.callSessionId, incomingCall?.callSessionId, finishCall]);
 
   const startCall = useCallback(async (conversation, mode = 'voice') => {
     if (!conversation || activeCallRef.current) throw new Error('Bạn đang ở trong một cuộc gọi khác.');
@@ -281,47 +339,30 @@ export function SocketProvider({ children }) {
     }
   }, [commitActiveCall, finishCall]);
 
-  const answerCall = useCallback(async () => {
+  const answerCall = useCallback(() => {
     const call = incomingCallRef.current;
-    if (!call) return;
-
+    if (!call || !socketRef.current) return;
     window.clearTimeout(closeTimer.current);
     stopRingtone();
     terminalCallIds.current.delete(String(call.callSessionId));
-    setCallNotice('Đang xác nhận nghe máy...');
 
-    const conversationId = call.conversationId || call.conversation?._id;
-    try {
-      // REST là nguồn xác nhận chính. Socket của tab trình duyệt thường có thể
-      // đang reconnect/stale, trong khi tab ẩn danh lại là một kết nối mới.
-      await api.post(`/calls/${call.callSessionId}/accept`, {});
+    // Chuyển sang active ngay trước khi gửi accept để không bỏ lỡ call:ended
+    // nếu người gọi tắt đúng trong khoảng callback đang chờ.
+    const pendingActiveCall = {
+      conversation: call.conversation,
+      mode: call.mode,
+      callSessionId: call.callSessionId,
+      direction: 'incoming'
+    };
+    commitIncomingCall(null);
+    commitActiveCall(pendingActiveCall);
+    setCallNotice('Đang kết nối…');
 
-      // Cuộc gọi có thể đã được nghe ở tab khác trong lúc request đang chạy.
-      if (String(incomingCallRef.current?.callSessionId || '') !== String(call.callSessionId)) return;
-
-      const nextActiveCall = {
-        conversation: call.conversation,
-        conversationId,
-        mode: call.mode,
-        callSessionId: call.callSessionId,
-        direction: 'incoming'
-      };
-      commitIncomingCall(null);
-      commitActiveCall(nextActiveCall);
-      setCallNotice('Đang kết nối Jitsi...');
-
-      // Re-emit accept after REST succeeded only to mark this socket as the
-      // answering tab and close the ringing UI on other tabs of the same user.
-      socketRef.current?.emit('call:accept', { callSessionId: call.callSessionId });
-      socketRef.current?.emit('call:join', {
-        conversationId,
-        callSessionId: call.callSessionId,
-        mode: call.mode
-      });
-    } catch (error) {
-      const message = errorMessage(error) || 'Không thể nghe máy';
-      finishCall(message, call.callSessionId, 'ended');
-    }
+    socketRef.current.emit('call:accept', { callSessionId: call.callSessionId }, (result) => {
+      if (!result?.ok) {
+        finishCall(result?.message || 'Không thể nghe máy', call.callSessionId, 'ended');
+      }
+    });
   }, [commitActiveCall, commitIncomingCall, finishCall]);
 
   const declineCall = useCallback(() => {

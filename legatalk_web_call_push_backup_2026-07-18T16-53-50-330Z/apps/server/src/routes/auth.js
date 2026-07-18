@@ -357,12 +357,7 @@ router.post('/change-password', requireAuth, asyncHandler(async (req, res) => {
 
 router.post('/logout', requireAuth, asyncHandler(async (req, res) => {
   const session = req.user.sessions.id(req.sessionId);
-  if (session) {
-    session.revokedAt = new Date();
-    session.pushToken = undefined;
-    session.pushPlatform = undefined;
-    session.pushEnvironment = undefined;
-  }
+  if (session) session.revokedAt = new Date();
   await req.user.save();
   res.json({ message: 'Đã đăng xuất.' });
 }));
@@ -385,9 +380,6 @@ router.delete('/sessions/:id', requireAuth, asyncHandler(async (req, res) => {
   const session = req.user.sessions.id(req.params.id);
   if (!session) return res.status(404).json({ message: 'Không tìm thấy phiên.' });
   session.revokedAt = new Date();
-  session.pushToken = undefined;
-  session.pushPlatform = undefined;
-  session.pushEnvironment = undefined;
   await req.user.save();
   res.json({ message: 'Đã thu hồi phiên đăng nhập.' });
 }));

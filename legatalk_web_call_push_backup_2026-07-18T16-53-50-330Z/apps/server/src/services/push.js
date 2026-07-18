@@ -14,7 +14,7 @@ function plainData(value) {
   return value;
 }
 
-function notificationPayload(notification, recipientUserId = null) {
+function notificationPayload(notification) {
   const rawData = plainData(notification.data);
   const data = Object.fromEntries(
     Object.entries(rawData || {})
@@ -23,7 +23,9 @@ function notificationPayload(notification, recipientUserId = null) {
   );
 
   if (!data.path) {
-    if (data.conversationId) data.path = '/chats';
+    if (String(notification.type || data.type || '') === 'incoming_call' && data.callSessionId) {
+      data.path = `/chats?incomingCall=${encodeURIComponent(data.callSessionId)}`;
+    } else if (data.conversationId) data.path = '/chats';
     else if (data.meetingId) data.path = `/meetings/${data.meetingId}`;
     else if (data.postId) data.path = `/timeline?post=${data.postId}`;
     else data.path = '/notifications';
@@ -31,7 +33,6 @@ function notificationPayload(notification, recipientUserId = null) {
 
   if (notification._id) data.notificationId = String(notification._id);
   if (notification.type) data.type = String(notification.type);
-  if (recipientUserId) data.recipientUserId = String(recipientUserId);
 
   return {
     title: notification.title || 'Nexora Connect',
@@ -40,10 +41,10 @@ function notificationPayload(notification, recipientUserId = null) {
   };
 }
 
-async function sendExpoPush(tokens, notification, recipientUserId) {
+async function sendExpoPush(tokens, notification) {
   const expoTokens = tokens.filter((token) => /^Expo(nent)?PushToken\[/i.test(String(token || '')));
   if (!expoTokens.length) return;
-  const payload = notificationPayload(notification, recipientUserId);
+  const payload = notificationPayload(notification);
   const chunks = [];
   for (let i = 0; i < expoTokens.length; i += 90) chunks.push(expoTokens.slice(i, i + 90));
   await Promise.allSettled(chunks.map((chunk) => fetch('https://exp.host/--/api/v2/push/send', {
@@ -56,14 +57,15 @@ async function sendExpoPush(tokens, notification, recipientUserId) {
       body: payload.body,
       data: payload.data,
       priority: 'high',
-      channelId: 'default'
+      channelId: payload.data.type === 'incoming_call' ? 'nexora_calls_v2' : 'default',
+      ttl: payload.data.type === 'incoming_call' ? 60 : undefined
     })))
   }).then(async (response) => {
     if (!response.ok) throw new Error(`Expo Push ${response.status}: ${await response.text()}`);
   })));
 }
 
-async function sendFcm(tokens, notification, recipientUserId) {
+async function sendFcm(tokens, notification, platform = 'android') {
   const fcmTokens = tokens.filter((token) => !/^Expo(nent)?PushToken\[/i.test(String(token || '')));
   if (!fcmTokens.length || !process.env.FCM_SERVICE_ACCOUNT_JSON) return;
   const raw = process.env.FCM_SERVICE_ACCOUNT_JSON.trim();
@@ -74,30 +76,64 @@ async function sendFcm(tokens, notification, recipientUserId) {
     scopes: ['https://www.googleapis.com/auth/firebase.messaging']
   });
   const { token } = await auth.getAccessToken();
-  const payload = notificationPayload(notification, recipientUserId);
-  await Promise.allSettled(fcmTokens.map((deviceToken) => fetch(
-    `https://fcm.googleapis.com/v1/projects/${serviceAccount.project_id}/messages:send`,
-    {
+  const payload = notificationPayload(notification);
+  const type = String(payload.data.type || '');
+  const isIncomingCall = type === 'incoming_call';
+  const isCallControl = type === 'call_terminal' || type === 'call_cancel';
+  const callKey = String(payload.data.callSessionId || 'call');
+
+  await Promise.allSettled(fcmTokens.map((deviceToken) => {
+    const data = {
+      ...payload.data,
+      title: String(payload.title || ''),
+      body: String(payload.body || '')
+    };
+    const message = { token: deviceToken, data };
+
+    if (platform === 'ios') {
+      message.apns = {
+        headers: {
+          'apns-priority': isCallControl ? '5' : '10',
+          'apns-push-type': isCallControl ? 'background' : 'alert',
+          'apns-collapse-id': `call-${callKey}`
+        },
+        payload: {
+          aps: {
+            'content-available': 1,
+            ...(!isCallControl ? { sound: 'default' } : {}),
+            ...(isIncomingCall ? { 'interruption-level': 'time-sensitive' } : {})
+          }
+        }
+      };
+
+      // iOS để hệ điều hành tự hiện thông báo khi app đã đóng. Control push
+      // chỉ mang data để app đang chạy có thể đóng notification cũ.
+      if (!isCallControl) {
+        message.notification = { title: payload.title, body: payload.body };
+      }
+    } else {
+      message.android = {
+        priority: 'high',
+        ttl: isIncomingCall ? '60s' : (isCallControl ? '30s' : '3600s'),
+        collapse_key: `call-${callKey}`
+      };
+
+      // Android call dùng data-only để background isolate tự tạo notification
+      // dạng CALL/full-screen. Thông báo thường vẫn do hệ thống hiển thị.
+      if (!isIncomingCall && !isCallControl) {
+        message.notification = { title: payload.title, body: payload.body };
+        delete message.android.collapse_key;
+      }
+    }
+
+    return fetch(`https://fcm.googleapis.com/v1/projects/${serviceAccount.project_id}/messages:send`, {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({
-        message: {
-          token: deviceToken,
-          // Android receives data-only HIGH priority so Flutter can verify
-          // recipientUserId before showing anything. A notification payload
-          // would be rendered by Android before Dart can reject a stale token.
-          data: {
-            ...payload.data,
-            title: String(payload.title || 'Legatalk'),
-            body: String(payload.body || '')
-          },
-          android: { priority: 'HIGH' }
-        }
-      })
-    }
-  ).then(async (response) => {
-    if (!response.ok) throw new Error(`FCM ${response.status}: ${await response.text()}`);
-  })));
+      body: JSON.stringify({ message })
+    }).then(async (response) => {
+      if (!response.ok) throw new Error(`FCM ${response.status}: ${await response.text()}`);
+    });
+  }));
 }
 
 function createApnsJwt() {
@@ -112,13 +148,13 @@ function createApnsJwt() {
   return `${signingInput}.${signature}`;
 }
 
-async function sendApns(tokens, notification, recipientUserId) {
+async function sendApns(tokens, notification) {
   const topic = process.env.APNS_BUNDLE_ID;
   const jwt = createApnsJwt();
   if (!tokens.length || !topic || !jwt) return;
   const production = String(process.env.APNS_PRODUCTION).toLowerCase() === 'true';
   const origin = production ? 'https://api.push.apple.com' : 'https://api.sandbox.push.apple.com';
-  const payload = notificationPayload(notification, recipientUserId);
+  const payload = notificationPayload(notification);
 
   await Promise.allSettled(tokens.map((deviceToken) => new Promise((resolve, reject) => {
     const client = http2.connect(origin);
@@ -161,7 +197,7 @@ async function sendWebPush(userId, notification) {
   const subscriptions = await WebPushSubscription.find({ user: userId }).lean();
   if (!subscriptions.length) return;
 
-  const payload = notificationPayload(notification, userId);
+  const payload = notificationPayload(notification);
   const body = JSON.stringify(payload);
 
   await Promise.allSettled(subscriptions.map(async (subscription) => {
@@ -171,7 +207,8 @@ async function sendWebPush(userId, notification) {
         expirationTime: subscription.expirationTime || null,
         keys: subscription.keys
       }, body, {
-        TTL: 60 * 60,
+        TTL: payload.data.type === 'incoming_call' ? 65 :
+          (['call_terminal', 'call_cancel'].includes(payload.data.type) ? 30 : 60 * 60),
         urgency: 'high'
       });
     } catch (error) {
@@ -196,9 +233,12 @@ export async function sendPushToUser(userId, notification) {
     .map((session) => session.pushToken);
 
   await Promise.allSettled([
-    sendExpoPush(androidTokens, notification, userId),
-    sendFcm(androidTokens, notification, userId),
-    sendApns(iosTokens, notification, userId),
+    sendExpoPush(androidTokens, notification),
+    // FirebaseMessaging.getToken() trả FCM token trên cả Android lẫn iOS.
+    sendFcm(androidTokens, notification, 'android'),
+    sendFcm(iosTokens, notification, 'ios'),
+    // Fallback cho client iOS cũ từng đăng ký APNs device token gốc.
+    sendApns(iosTokens, notification),
     sendWebPush(userId, notification)
   ]);
 }

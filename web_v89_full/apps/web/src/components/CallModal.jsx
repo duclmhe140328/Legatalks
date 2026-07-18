@@ -6,6 +6,7 @@ import Avatar from './Avatar';
 import './jitsi-call.css';
 
 const scriptPromises = new Map();
+const JITSI_SCRIPT_SELECTOR = 'script[src*="/external_api.js"]';
 
 function cleanServerUrl(value) {
   const raw = String(value || 'https://42.96.12.227').trim().replace(/\/$/, '');
@@ -17,22 +18,68 @@ function domainFromUrl(value) {
   return new URL(cleanServerUrl(value)).host;
 }
 
+function removeStaleJitsiApi(base) {
+  const scripts = [...document.querySelectorAll(JITSI_SCRIPT_SELECTOR)];
+  const tagged = scripts.find((node) => node.dataset.legatalkJitsiBase === base);
+  if (window.JitsiMeetExternalAPI && tagged) return false;
+
+  for (const node of scripts) node.remove();
+  try { delete window.JitsiMeetExternalAPI; } catch { window.JitsiMeetExternalAPI = undefined; }
+  scriptPromises.clear();
+  return true;
+}
+
 function loadExternalApi(serverUrl) {
   const base = cleanServerUrl(serverUrl);
-  if (window.JitsiMeetExternalAPI) return Promise.resolve();
+  removeStaleJitsiApi(base);
+
+  const existing = [...document.querySelectorAll(JITSI_SCRIPT_SELECTOR)]
+    .find((node) => node.dataset.legatalkJitsiBase === base);
+  if (window.JitsiMeetExternalAPI && existing) return Promise.resolve();
   if (scriptPromises.has(base)) return scriptPromises.get(base);
 
   const promise = new Promise((resolve, reject) => {
     const script = document.createElement('script');
-    script.src = `${base}/external_api.js`;
+    // Cache-bust external_api.js. Normal browser profiles can keep an old Jitsi
+    // bridge while an incognito window downloads the current compatible file.
+    script.src = `${base}/external_api.js?legatalk-call-v4=${Date.now()}`;
+    script.dataset.legatalkJitsiBase = base;
     script.async = true;
-    script.onload = resolve;
+    script.onload = () => {
+      if (window.JitsiMeetExternalAPI) resolve();
+      else reject(new Error('Jitsi external API loaded but was not initialized.'));
+    };
     script.onerror = () => reject(new Error(`Cannot load ${base}/external_api.js`));
     document.body.appendChild(script);
+  }).catch((error) => {
+    scriptPromises.delete(base);
+    throw error;
   });
 
   scriptPromises.set(base, promise);
   return promise;
+}
+
+async function verifyMediaPermission(isAudio) {
+  if (!navigator.mediaDevices?.getUserMedia) return;
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: true,
+      video: isAudio ? false : { facingMode: 'user' },
+    });
+  } catch (error) {
+    const name = String(error?.name || '');
+    if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+      throw new Error('Trình duyệt đang chặn Micro/Camera. Bấm biểu tượng ổ khóa cạnh địa chỉ, cho phép Micro và Camera rồi thử lại.');
+    }
+    if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+      throw new Error('Không tìm thấy Micro/Camera khả dụng trên thiết bị này.');
+    }
+    throw error;
+  } finally {
+    stream?.getTracks?.().forEach((track) => track.stop());
+  }
 }
 
 function peerFromConversation(conversation) {
@@ -41,6 +88,7 @@ function peerFromConversation(conversation) {
 
 export default function CallModal({
   conversation,
+  conversationId,
   mode = 'video',
   callSessionId,
   direction = 'outgoing',
@@ -51,25 +99,44 @@ export default function CallModal({
   const parentRef = useRef(null);
   const apiRef = useRef(null);
   const endingRef = useRef(false);
+  const joinedRef = useRef(false);
   const mountedRef = useRef(true);
-  const [status, setStatus] = useState(direction === 'outgoing' ? 'Dang goi...' : 'Dang ket noi...');
+  const [status, setStatus] = useState(direction === 'outgoing' ? 'Đang gọi...' : 'Đang kết nối...');
   const [error, setError] = useState('');
   const [joining, setJoining] = useState(true);
+  const [retryKey, setRetryKey] = useState(0);
 
   const isAudio = mode === 'audio' || mode === 'voice';
   const peer = useMemo(() => peerFromConversation(conversation), [conversation]);
-  const title = conversation?.name || peer?.displayName || 'Cuoc goi Nexora';
+  const title = conversation?.name || peer?.displayName || 'Cuộc gọi Legatalk';
+  const resolvedConversationId = conversationId || conversation?._id;
 
-  const finish = async ({ notifyBackend = true } = {}) => {
+  useEffect(() => {
+    if (!socket || !callSessionId || !resolvedConversationId) return undefined;
+
+    const joinSocketCall = () => {
+      socket.emit('call:join', {
+        conversationId: resolvedConversationId,
+        callSessionId,
+        mode: isAudio ? 'voice' : 'video',
+      });
+    };
+
+    joinSocketCall();
+    socket.on('connect', joinSocketCall);
+    return () => socket.off('connect', joinSocketCall);
+  }, [socket, resolvedConversationId, callSessionId, isAudio]);
+
+  const finish = async () => {
     if (endingRef.current) return;
     endingRef.current = true;
-    setStatus('Dang ket thuc cuoc goi...');
+    setStatus('Đang kết thúc cuộc gọi...');
 
     try { apiRef.current?.executeCommand?.('hangup'); } catch { /* ignore */ }
     try { apiRef.current?.dispose?.(); } catch { /* ignore */ }
     apiRef.current = null;
 
-    if (notifyBackend && callSessionId) {
+    if (callSessionId) {
       try { socket?.emit('call:leave', { callSessionId }); } catch { /* ignore */ }
       try { await api.post(`/calls/${callSessionId}/end`, {}); } catch { /* already ended */ }
     }
@@ -77,41 +144,67 @@ export default function CallModal({
     onClose?.();
   };
 
+  const keepCallOpenAfterJitsiClose = (reason) => {
+    if (!mountedRef.current || endingRef.current) return;
+    joinedRef.current = false;
+    setJoining(false);
+    setStatus('Legatalk đã ngắt kết nối');
+    setError(reason || 'Legatalk vừa đóng kết nối. Cuộc gọi chưa bị kết thúc; hãy bấm Kết nối lại.');
+    try { apiRef.current?.dispose?.(); } catch { /* ignore */ }
+    apiRef.current = null;
+  };
+
   useEffect(() => {
     mountedRef.current = true;
+    endingRef.current = false;
+    joinedRef.current = false;
     let cancelled = false;
 
     async function boot() {
+      setError('');
+      setJoining(true);
+      setStatus(direction === 'outgoing' ? 'Đang mở cuộc gọi...' : 'Đang vào cuộc gọi...');
+
       if (!callSessionId) {
-        setError('Thieu ma cuoc goi.');
+        setError('Thiếu mã cuộc gọi.');
         setJoining(false);
         return;
       }
 
       try {
+        await verifyMediaPermission(isAudio);
         const { data } = await api.post('/jitsi/token', {
           purpose: 'call',
           callSessionId,
         });
         if (cancelled || !parentRef.current) return;
 
-        const serverUrl = cleanServerUrl(data.serverUrl);
+        const serverUrl = cleanServerUrl(
+          data?.serverUrl || data?.serverURL || data?.jitsiServerUrl || data?.jitsiServerURL,
+        );
+        const roomName = String(data?.room || data?.roomName || '').trim();
+        const jwt = String(data?.token || data?.jwt || '').trim();
+        if (!roomName || !jwt) throw new Error('Backend không trả đủ room/JWT .');
+
         await loadExternalApi(serverUrl);
         if (cancelled || !parentRef.current || !window.JitsiMeetExternalAPI) return;
 
+        try { apiRef.current?.dispose?.(); } catch { /* ignore */ }
+        apiRef.current = null;
         parentRef.current.innerHTML = '';
+
         const instance = new window.JitsiMeetExternalAPI(domainFromUrl(serverUrl), {
-          roomName: data.room,
-          jwt: data.token,
+          roomName,
+          jwt,
           parentNode: parentRef.current,
           width: '100%',
           height: '100%',
           lang: 'vi',
           userInfo: {
-            displayName: data.user?.displayName,
+            displayName: data?.user?.displayName,
           },
           configOverwrite: {
-            subject: isAudio ? 'Cuoc goi thoai Nexora' : 'Cuoc goi video Nexora',
+            subject: isAudio ? 'Cuộc gọi thoại Legatalk' : 'Cuộc gọi video Legatalk',
             prejoinConfig: { enabled: false },
             disableDeepLinking: true,
             'deeplinking.disabled': true,
@@ -121,9 +214,11 @@ export default function CallModal({
             startAudioOnly: isAudio,
             defaultLanguage: 'vi',
             notifications: [],
+            // Chỉ dùng nút Kết thúc của Legatalk. Không để Jitsi đóng iframe
+            // trước rồi làm toàn bộ modal biến mất ngoài ý muốn.
             toolbarButtons: isAudio
-              ? ['microphone', 'speakerstats', 'fullscreen', 'hangup']
-              : ['microphone', 'camera', 'desktop', 'tileview', 'fullscreen', 'hangup'],
+              ? ['microphone', 'fullscreen']
+              : ['microphone', 'camera', 'desktop', 'tileview', 'fullscreen'],
           },
           interfaceConfigOverwrite: {
             SHOW_JITSI_WATERMARK: false,
@@ -135,18 +230,37 @@ export default function CallModal({
 
         apiRef.current = instance;
         instance.addListener('videoConferenceJoined', () => {
+          joinedRef.current = true;
           if (!mountedRef.current) return;
           setJoining(false);
-          setStatus(direction === 'outgoing' ? 'Dang cho nguoi ben kia...' : 'Da vao cuoc goi');
+          setError('');
+          setStatus(direction === 'outgoing' ? 'Đang chờ người bên kia...' : 'Đã vào cuộc gọi');
         });
-        instance.addListener('participantJoined', () => mountedRef.current && setStatus('Dang goi'));
-        instance.addListener('participantLeft', () => mountedRef.current && setStatus('Nguoi ben kia da roi cuoc goi'));
-        instance.addListener('videoConferenceLeft', () => void finish());
-        instance.addListener('readyToClose', () => void finish());
+        instance.addListener('participantJoined', () => mountedRef.current && setStatus('Đang gọi'));
+        instance.addListener('participantLeft', () => mountedRef.current && setStatus('Người bên kia đã rời cuộc gọi'));
+        instance.addListener('cameraError', (details) => {
+          if (!mountedRef.current) return;
+          setError(`Camera lỗi: ${details?.message || 'hãy kiểm tra quyền Camera.'}`);
+        });
+        instance.addListener('micError', (details) => {
+          if (!mountedRef.current) return;
+          setError(`Micro lỗi: ${details?.message || 'hãy kiểm tra quyền Micro.'}`);
+        });
+        instance.addListener('videoConferenceLeft', () => {
+          keepCallOpenAfterJitsiClose(
+            joinedRef.current
+              ? 'Kết nối Legatalk vừa bị đóng. Cuộc gọi vẫn đang giữ; bấm Kết nối lại hoặc Kết thúc.'
+              : 'Legatalk đóng trước khi vào phòng. Hãy kiểm tra quyền Micro/Camera rồi bấm Kết nối lại.',
+          );
+        });
+        instance.addListener('readyToClose', () => {
+          keepCallOpenAfterJitsiClose('Legatalk yêu cầu đóng khung gọi. Cuộc gọi chưa bị kết thúc; hãy bấm Kết nối lại.');
+        });
       } catch (err) {
         if (!cancelled) {
           setJoining(false);
-          setError(err?.response?.data?.message || err?.message || 'Khong mo duoc Jitsi.');
+          setStatus('Không thể vào');
+          setError(err?.response?.data?.message || err?.message || 'Không mở được.');
         }
       }
     }
@@ -157,14 +271,21 @@ export default function CallModal({
       mountedRef.current = false;
       try { apiRef.current?.dispose?.(); } catch { /* ignore */ }
       apiRef.current = null;
+      joinedRef.current = false;
     };
-  }, [callSessionId, direction, isAudio]);
+  }, [callSessionId, direction, isAudio, retryKey]);
 
   useEffect(() => {
     if (externalStatus) setStatus(externalStatus);
   }, [externalStatus]);
 
-  const reopen = () => window.location.reload();
+  const retry = () => {
+    endingRef.current = false;
+    setError('');
+    setJoining(true);
+    setRetryKey((value) => value + 1);
+  };
+
   const fullscreen = () => {
     const node = parentRef.current?.closest('.jitsi-call-card');
     node?.requestFullscreen?.();
@@ -178,25 +299,25 @@ export default function CallModal({
             <Avatar user={peer} size={42} />
             <span><b>{title}</b><small>{status}</small></span>
           </div>
-          <button type="button" onClick={fullscreen} title="Toan man hinh"><Maximize2 size={19} /></button>
+          <button type="button" onClick={fullscreen} title="Toàn màn hình"><Maximize2 size={19} /></button>
         </header>
 
         <div className="jitsi-call-stage">
-          {joining && <div className="jitsi-call-loading"><span className="jitsi-call-spinner" /><b>Dang goi</b></div>}
+          {joining && <div className="jitsi-call-loading"><span className="jitsi-call-spinner" /><b>Đang kết nối</b></div>}
           {error && (
             <div className="jitsi-call-error">
               <Avatar user={peer} size={84} />
               <b>{error}</b>
-              <button type="button" onClick={reopen}><RefreshCcw size={17} /> Thu lai</button>
+              <button type="button" onClick={retry}><RefreshCcw size={17} /> Kết nối lại</button>
             </div>
           )}
           <div ref={parentRef} className="jitsi-call-frame" />
         </div>
 
         <footer className="jitsi-call-footer">
-          <span>{isAudio ? 'Goi thoai 1-1 qua Jitsi' : 'Goi video 1-1 qua Jitsi'}</span>
+          <span>{isAudio ? 'Gọi thoại 1-1' : 'Gọi video 1-1'}</span>
           <button type="button" className="jitsi-call-hangup" onClick={() => void finish()}>
-            <PhoneOff size={20} /> Ket thuc
+            <PhoneOff size={20} /> Kết thúc
           </button>
         </footer>
       </section>
