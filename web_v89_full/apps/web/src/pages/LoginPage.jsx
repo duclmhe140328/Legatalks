@@ -17,7 +17,11 @@ export default function LoginPage() {
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(false);
 
-  if (user) return <Navigate to="/" replace />;
+  if (user) {
+    const returnTo = sessionStorage.getItem('meetingReturnTo') || '/';
+    sessionStorage.removeItem('meetingReturnTo');
+    return <Navigate to={returnTo} replace />;
+  }
 
   const rememberDevice = (d) => localStorage.setItem('deviceId', d.deviceId);
   const submit = async (event) => {

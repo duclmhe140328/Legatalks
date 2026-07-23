@@ -165,20 +165,22 @@ api.interceptors.response.use(
 
       return api(original);
     } catch (refreshError) {
-      clearStoredSession();
+      const refreshStatus = Number(refreshError?.response?.status || 0);
+      const refreshRejected = [400, 401, 403].includes(refreshStatus);
 
-      /*
-       * Chỉ chuyển về login khi đang ở trang được bảo vệ.
-       * Không reload vô hạn ngay trên /login hoặc /register.
-       */
-      const pathname = window.location.pathname;
+      // Chỉ xóa phiên khi server xác nhận refresh token không còn hợp lệ.
+      // Mất mạng, timeout hoặc Render đang khởi động không được ép đăng xuất.
+      if (refreshRejected) {
+        clearStoredSession();
 
-      if (
-        pathname !== '/login' &&
-        pathname !== '/register' &&
-        pathname !== '/forgot-password'
-      ) {
-        window.location.replace('/login');
+        const pathname = window.location.pathname;
+        if (
+          pathname !== '/login' &&
+          pathname !== '/register' &&
+          pathname !== '/forgot-password'
+        ) {
+          window.location.replace('/login');
+        }
       }
 
       throw refreshError;

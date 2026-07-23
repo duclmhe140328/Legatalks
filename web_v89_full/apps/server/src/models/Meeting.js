@@ -12,6 +12,7 @@ const meetingSchema = new mongoose.Schema({
   title: { type: String, required: true, trim: true, maxlength: 160 },
   description: { type: String, default: '', maxlength: 2000 },
   roomName: { type: String, required: true, unique: true, index: true },
+  guestKey: { type: String, unique: true, sparse: true, index: true },
   jitsiDomain: { type: String, default: 'meet.jit.si' },
   visibility: { type: String, enum: ['private', 'public'], default: 'private', index: true },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },

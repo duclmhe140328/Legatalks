@@ -1,4 +1,4 @@
-﻿import express from 'express';
+import express from 'express';
 import { nanoid } from 'nanoid';
 import Meeting from '../models/Meeting.js';
 import Conversation from '../models/Conversation.js';
@@ -8,9 +8,9 @@ import { requireAuth } from '../middleware/auth.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ensureMember, createMessage } from '../services/messageService.js';
 import { createNotification } from '../services/notifications.js';
+import { createJitsiToken, getJitsiPublicConfig } from '../services/jitsiToken.js';
 
 const router = express.Router();
-router.use(requireAuth);
 
 const userFields = 'displayName avatar accountType verified';
 const MEETING_POPULATE = [
@@ -126,6 +126,116 @@ async function syncTimeStatus(meeting) {
   return meeting;
 }
 
+function hostParticipant(meeting) {
+  return meeting.participants.find((item) =>
+    String(item.role || '') === 'host' ||
+    String(item.user?._id || item.user) === String(meeting.createdBy?._id || meeting.createdBy)
+  );
+}
+
+function hostIsInside(meeting) {
+  const host = hostParticipant(meeting);
+  return Boolean(
+    meeting.status === 'live' &&
+    host?.joinedAt &&
+    !host?.leftAt
+  );
+}
+
+function validGuestKey(meeting, value) {
+  const expected = String(meeting.guestKey || '');
+  const received = String(value || '');
+  return Boolean(expected && received && expected === received);
+}
+
+function safeGuestMeeting(meeting) {
+  return {
+    _id: meeting._id,
+    title: meeting.title,
+    description: meeting.description,
+    startsAt: meeting.startsAt,
+    endsAt: meeting.endsAt,
+    durationMinutes: meeting.durationMinutes,
+    status: meeting.status,
+    hostJoined: hostIsInside(meeting),
+    createdBy: {
+      _id: meeting.createdBy?._id || meeting.createdBy,
+      displayName: meeting.createdBy?.displayName || 'Chủ phòng',
+      avatar: meeting.createdBy?.avatar || ''
+    }
+  };
+}
+
+router.get('/public/:id', asyncHandler(async (req, res) => {
+  const meeting = await Meeting.findById(req.params.id)
+    .populate('createdBy', 'displayName avatar')
+    .populate('participants.user', 'displayName avatar');
+
+  if (!meeting || !validGuestKey(meeting, req.query.key)) {
+    return res.status(404).json({ message: 'Link phòng họp không hợp lệ hoặc đã bị thu hồi.' });
+  }
+
+  await syncTimeStatus(meeting);
+  res.json({ meeting: safeGuestMeeting(meeting) });
+}));
+
+router.post('/public/:id/join', asyncHandler(async (req, res) => {
+  const meeting = await Meeting.findById(req.params.id)
+    .populate('createdBy', 'displayName avatar')
+    .populate('participants.user', 'displayName avatar');
+
+  if (!meeting || !validGuestKey(meeting, req.body.key)) {
+    return res.status(404).json({ message: 'Link phòng họp không hợp lệ hoặc đã bị thu hồi.' });
+  }
+
+  await syncTimeStatus(meeting);
+
+  if (['ended', 'cancelled'].includes(meeting.status)) {
+    return res.status(410).json({ message: 'Cuộc họp đã kết thúc.' });
+  }
+
+  if (!hostIsInside(meeting)) {
+    return res.status(409).json({
+      code: 'HOST_NOT_READY',
+      message: 'Chủ phòng chưa vào họp. Chỉ tài khoản tạo phòng có thể mở phòng trước.',
+      meeting: safeGuestMeeting(meeting)
+    });
+  }
+
+  const displayName = String(req.body.displayName || 'Khách mời')
+    .trim()
+    .slice(0, 80) || 'Khách mời';
+
+  const guestUser = {
+    _id: `guest-${nanoid(18)}`,
+    displayName,
+    email: '',
+    avatar: ''
+  };
+
+  const publicConfig = getJitsiPublicConfig();
+  const signed = createJitsiToken({
+    room: meeting.roomName,
+    user: guestUser,
+    moderator: false
+  });
+
+  res.json({
+    meeting: safeGuestMeeting(meeting),
+    jitsi: {
+      serverUrl: publicConfig.serverUrl,
+      domain: publicConfig.domain,
+      room: signed.room,
+      token: signed.token,
+      expiresAt: signed.expiresAt,
+      expiresIn: signed.expiresIn,
+      displayName
+    }
+  });
+}));
+
+router.use(requireAuth);
+
 router.get('/', asyncHandler(async (req, res) => {
   const page = Math.max(1, Number(req.query.page || 1));
   const limit = Math.min(50, Math.max(5, Number(req.query.limit || 12)));
@@ -175,6 +285,7 @@ router.post('/', asyncHandler(async (req, res) => {
     title: req.body.title?.trim() || (conversation?.name ? `Họp nhóm ${conversation.name}` : 'Cuộc họp Nexora'),
     description: req.body.description || '',
     roomName: `nexora-${Date.now()}-${nanoid(10)}`,
+    guestKey: nanoid(32),
     jitsiDomain: req.body.jitsiDomain || env.jitsiDomain,
     visibility,
     createdBy: req.user._id,
@@ -237,6 +348,25 @@ router.post('/', asyncHandler(async (req, res) => {
   if (visibility === 'public') io.emit('meeting:new', meeting);
   else for (const id of audience) io.to(`user:${id}`).emit('meeting:new', meeting);
   res.status(201).json({ ...meeting.toObject(), chatMessage });
+}));
+
+router.post('/:id/share', asyncHandler(async (req, res) => {
+  const meeting = await ensureParticipant(
+    req.params.id,
+    req.user._id,
+    { allowConversationMember: true }
+  );
+
+  if (!meeting.guestKey) {
+    meeting.guestKey = nanoid(32);
+    await meeting.save();
+  }
+
+  res.json({
+    meetingId: meeting._id,
+    guestKey: meeting.guestKey,
+    path: `/join-meeting/${meeting._id}?key=${encodeURIComponent(meeting.guestKey)}`
+  });
 }));
 
 router.get('/:id', asyncHandler(async (req, res) => {

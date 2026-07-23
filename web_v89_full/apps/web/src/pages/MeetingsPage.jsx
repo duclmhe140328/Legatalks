@@ -81,9 +81,15 @@ export default function MeetingsPage() {
   };
 
   const copyLink = async (meeting) => {
-    const url = `${window.location.origin}/meetings/${meeting._id}`;
-    await navigator.clipboard?.writeText(url);
-    setStatus('Đã sao chép link phòng họp.');
+    try {
+      const { data } = await api.post(`/meetings/${meeting._id}/share`, {});
+      const path = data?.path || `/join-meeting/${meeting._id}?key=${encodeURIComponent(data?.guestKey || '')}`;
+      const url = `${window.location.origin}${path}`;
+      await navigator.clipboard?.writeText(url);
+      setStatus('Đã sao chép link khách. Người nhận không cần đăng nhập.');
+    } catch (error) {
+      setStatus(errorMessage(error, 'Không tạo được link khách.'));
+    }
   };
 
   return <div className="meetings-page">

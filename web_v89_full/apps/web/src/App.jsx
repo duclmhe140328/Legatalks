@@ -14,6 +14,7 @@ import UserProfilePage from './pages/UserProfilePage';
 import CallHistoryPage from './pages/CallHistoryPage';
 import NotificationsPage from './pages/NotificationsPage';
 import MeetingsPage from './pages/MeetingsPage';
+import GuestMeetingPage from './pages/GuestMeetingPage';
 
 function Protected({ children }) {
   const { user, loading } = useAuth();
@@ -97,6 +98,8 @@ export default function App() {
           </GuestRoute>
         }
       />
+
+      <Route path="/join-meeting/:meetingId" element={<GuestMeetingPage />} />
 
       <Route path="/" element={<Protected><AppShell /></Protected>}>
         <Route index element={<Navigate to="/timeline" replace />} />

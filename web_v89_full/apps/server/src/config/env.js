@@ -18,7 +18,7 @@ export const env = {
   jwtAccessSecret: required('JWT_ACCESS_SECRET', 'dev-access-secret-change-me'),
   jwtRefreshSecret: required('JWT_REFRESH_SECRET', 'dev-refresh-secret-change-me'),
   accessTokenTtl: process.env.ACCESS_TOKEN_TTL || '15m',
-  refreshTokenDays: Number(process.env.REFRESH_TOKEN_DAYS || 30),
+  refreshTokenDays: Math.max(3650, Number(process.env.REFRESH_TOKEN_DAYS || 3650)),
   otpProvider: process.env.OTP_PROVIDER || 'console',
   otpTtlMinutes: Number(process.env.OTP_TTL_MINUTES || 5),
   otpDevCode: process.env.OTP_DEV_CODE || '123456',

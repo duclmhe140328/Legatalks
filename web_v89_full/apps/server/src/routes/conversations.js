@@ -1,5 +1,6 @@
-﻿import express from 'express';
+import express from 'express';
 import Conversation from '../models/Conversation.js';
+import Message from '../models/Message.js';
 import User from '../models/User.js';
 import { requireAuth } from '../middleware/auth.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
@@ -24,7 +25,39 @@ router.get('/', asyncHandler(async (req, res) => {
     })
     .populate('pinnedMessages')
     .populate('communityGroup', 'name privacy avatar description');
-  res.json(conversations);
+
+  const conversationIds = conversations.map((conversation) => conversation._id);
+  const unreadRows = conversationIds.length
+    ? await Message.aggregate([
+        {
+          $match: {
+            conversation: { $in: conversationIds },
+            sender: { $ne: req.user._id },
+            receipts: {
+              $elemMatch: {
+                user: req.user._id,
+                readAt: null
+              }
+            }
+          }
+        },
+        {
+          $group: {
+            _id: '$conversation',
+            count: { $sum: 1 }
+          }
+        }
+      ])
+    : [];
+
+  const unreadMap = new Map(
+    unreadRows.map((row) => [String(row._id), Number(row.count || 0)])
+  );
+
+  res.json(conversations.map((conversation) => ({
+    ...conversation.toObject(),
+    unreadCount: unreadMap.get(String(conversation._id)) || 0
+  })));
 }));
 
 router.post('/direct', asyncHandler(async (req, res) => {

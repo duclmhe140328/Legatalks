@@ -46,8 +46,11 @@ export const uploader = multer({
   storage,
   limits: { fileSize: 250 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    const allowed = /image|video|audio|pdf|zip|rar|word|excel|powerpoint|text|octet-stream/;
-    cb(null, allowed.test(file.mimetype));
+    const mime = String(file.mimetype || '').toLowerCase();
+    const allowed =
+      /^(image|video|audio)\//.test(mime) ||
+      /(pdf|zip|rar|7z|gzip|tar|text|csv|json|xml|octet-stream|msword|officedocument|openxmlformats|wordprocessingml|spreadsheetml|presentationml)/.test(mime);
+    cb(null, allowed);
   }
 });
 

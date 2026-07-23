@@ -24,6 +24,55 @@ function messagePreview(payload) {
   return String(payload.text || 'Tin nhắn mới').slice(0, 160);
 }
 
+const ALLOWED_MESSAGE_KINDS = new Set([
+  'text', 'image', 'video', 'file', 'audio', 'sticker', 'gif', 'system'
+]);
+
+function normalizedMedia(payload = {}) {
+  const raw = Array.isArray(payload.media)
+    ? payload.media
+    : Array.isArray(payload.attachments)
+      ? payload.attachments
+      : Array.isArray(payload.files)
+        ? payload.files
+        : [];
+
+  return raw
+    .filter((item) => item && typeof item === 'object')
+    .map((item) => ({
+      ...item,
+      url: item.url || item.fileUrl || item.path || '',
+      mimeType: item.mimeType || item.mimetype || '',
+      name: item.name || item.fileName || ''
+    }))
+    .filter((item) => item.url);
+}
+
+function normalizedMessageKind(payload = {}, media = []) {
+  const requested = String(
+    payload.kind ||
+    payload.messageType ||
+    payload.contentType ||
+    payload.type ||
+    ''
+  ).trim().toLowerCase();
+
+  if (ALLOWED_MESSAGE_KINDS.has(requested)) return requested;
+  if (!media.length) return 'text';
+
+  const kinds = new Set(media.map((item) => {
+    const type = String(item.type || item.kind || item.mimeType || '').toLowerCase();
+    const name = String(item.name || item.url || '').toLowerCase();
+
+    if (type.includes('image') || /\.(png|jpe?g|gif|webp)$/i.test(name)) return 'image';
+    if (type.includes('video') || /\.(mp4|mov|webm|mkv|avi)$/i.test(name)) return 'video';
+    if (type.includes('audio') || /\.(mp3|m4a|wav|aac|ogg|opus|flac)$/i.test(name)) return 'audio';
+    return 'file';
+  }));
+
+  return kinds.size === 1 ? [...kinds][0] : 'file';
+}
+
 async function enforceDirectPrivacy(conversation, senderId) {
   if (conversation.type !== 'direct') return;
   const targetId = conversation.members.map((member) => member.user).find((id) => String(id) !== String(senderId));
@@ -43,16 +92,19 @@ async function enforceDirectPrivacy(conversation, senderId) {
 }
 
 export async function createMessage({ io, userId, payload }) {
-  const conversation = await ensureMember(payload.conversationId, userId);
+  const conversationId = payload.conversationId || payload.conversation;
+  const conversation = await ensureMember(conversationId, userId);
   await enforceDirectPrivacy(conversation, userId);
 
+  const media = normalizedMedia(payload);
+  const kind = normalizedMessageKind(payload, media);
   const memberIds = conversation.members.map((member) => member.user);
   const messageDoc = {
     conversation: conversation._id,
     sender: userId,
-    kind: payload.kind || 'text',
-    text: payload.text || '',
-    media: payload.media || [],
+    kind,
+    text: payload.text || payload.body || payload.content || payload.message || '',
+    media,
     replyTo: payload.replyTo || null,
     metadata: payload.metadata || {},
     receipts: memberIds.filter((id) => String(id) !== String(userId)).map((id) => ({ user: id }))
@@ -102,7 +154,7 @@ export async function createMessage({ io, userId, payload }) {
     actor: userId,
     type: 'message',
     title: populated.sender?.displayName || 'Tin nhắn mới',
-    body: messagePreview(payload),
+    body: messagePreview({ ...payload, kind, media }),
     data: { conversationId: conversation._id, messageId: message._id, kind: message.kind }
   })));
 

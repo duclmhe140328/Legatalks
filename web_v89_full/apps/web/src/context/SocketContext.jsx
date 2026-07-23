@@ -45,6 +45,36 @@ export function SocketProvider({ children }) {
     setIncomingCall(nextCall);
   }, []);
 
+  const syncUnreadCounts = useCallback(async () => {
+    if (!user?._id) {
+      setUnreadByConversation({});
+      return;
+    }
+
+    try {
+      const { data } = await api.get('/conversations');
+      const next = {};
+
+      for (const conversation of Array.isArray(data) ? data : []) {
+        const conversationId = String(conversation?._id || conversation?.id || '');
+        const unreadCount = Number(conversation?.unreadCount || 0);
+
+        if (conversationId && unreadCount > 0) {
+          next[conversationId] = unreadCount;
+        }
+      }
+
+      setUnreadByConversation(next);
+    } catch (error) {
+      // Giữ badge hiện tại nếu mạng/Render đang thức dậy.
+      console.warn('Unread sync warning:', error?.message || error);
+    }
+  }, [user?._id]);
+
+  useEffect(() => {
+    void syncUnreadCounts();
+  }, [syncUnreadCounts]);
+
   const finishCall = useCallback((message, callSessionId, status = 'ended') => {
     const id = String(callSessionId || '');
     const activeMatches = !id || String(activeCallRef.current?.callSessionId || '') === id;
@@ -102,7 +132,10 @@ export function SocketProvider({ children }) {
       });
     };
 
-    const onConnect = () => syncPresence();
+    const onConnect = () => {
+      syncPresence();
+      void syncUnreadCounts();
+    };
     const onPresence = ({ userId, online }) => {
       setOnlineUsers((current) => {
         const next = new Set(current);
@@ -182,7 +215,15 @@ export function SocketProvider({ children }) {
     };
 
     const onVisibility = () => {
-      if (!document.hidden) syncPresence();
+      if (!document.hidden) {
+        syncPresence();
+        void syncUnreadCounts();
+      }
+    };
+
+    const onFocus = () => {
+      syncPresence();
+      void syncUnreadCounts();
     };
 
     client.on('connect', onConnect);
@@ -197,7 +238,7 @@ export function SocketProvider({ children }) {
     client.on('call:terminal', onEnded);
     client.on('call:answered-elsewhere', onAnsweredElsewhere);
     client.on('group:joined', onGroupJoined);
-    window.addEventListener('focus', syncPresence);
+    window.addEventListener('focus', onFocus);
     document.addEventListener('visibilitychange', onVisibility);
     const presenceTimer = window.setInterval(syncPresence, 15000);
 
@@ -205,7 +246,7 @@ export function SocketProvider({ children }) {
       stopRingtone();
       window.clearTimeout(closeTimer.current);
       window.clearInterval(presenceTimer);
-      window.removeEventListener('focus', syncPresence);
+      window.removeEventListener('focus', onFocus);
       document.removeEventListener('visibilitychange', onVisibility);
       client.off('connect', onConnect);
       client.off('presence:snapshot', applyPresenceSnapshot);
@@ -224,7 +265,7 @@ export function SocketProvider({ children }) {
       setSocket(null);
       setOnlineUsers(new Set());
     };
-  }, [user?._id, commitIncomingCall, finishCall]);
+  }, [user?._id, commitIncomingCall, finishCall, syncUnreadCounts]);
 
   // Lớp dự phòng: nếu event WebSocket bị lỡ đúng lúc nhận máy/kết thúc,
   // client vẫn hỏi trạng thái authoritative từ server và tự đóng trong ~1 giây.
@@ -375,10 +416,11 @@ export function SocketProvider({ children }) {
     declineCall,
     closeActiveCall,
     markConversationActive,
+    syncUnreadCounts,
     unreadByConversation,
     unreadTotal,
     enableDeviceNotifications
-  }), [socket, onlineUsers, incomingCall, activeCall, callNotice, startCall, answerCall, declineCall, closeActiveCall, markConversationActive, unreadByConversation, unreadTotal, enableDeviceNotifications]);
+  }), [socket, onlineUsers, incomingCall, activeCall, callNotice, startCall, answerCall, declineCall, closeActiveCall, markConversationActive, syncUnreadCounts, unreadByConversation, unreadTotal, enableDeviceNotifications]);
 
   return <SocketContext.Provider value={value}>{children}</SocketContext.Provider>;
 }
