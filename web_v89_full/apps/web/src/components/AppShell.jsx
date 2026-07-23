@@ -389,8 +389,18 @@ export default function AppShell() {
           <button className="fb-mobile-menu" type="button" onClick={() => setMobileMenuOpen((value) => !value)} aria-label="Mở menu">
             {mobileMenuOpen ? <X size={22} /> : <Menu size={22} />}
           </button>
-          <NavLink to="/timeline" className="fb-logo" aria-label="Legatalk Connect">
-            <span>L</span>
+          <NavLink to="/timeline" className="" aria-label="Legatalk Connect">
+            <div className="nx-auth-v2__brand">
+              {/* Bỏ class nx-auth-v2__logo, thay bằng div tự chỉnh kích thước */}
+              <div style={{ width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <img
+                  src="/logo.png"
+                  alt="Logo"
+                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                />
+              </div>
+            
+            </div>
           </NavLink>
           <form
             className={`fb-global-search ${mobileSearchOpen ? 'expanded' : ''}`}

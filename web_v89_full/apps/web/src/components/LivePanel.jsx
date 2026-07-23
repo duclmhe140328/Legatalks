@@ -542,7 +542,7 @@ export default function LivePanel() {
               <div style={{ width: '100%', height: 'calc(100vh - 260px)', minHeight: 520, background: '#020617', borderRadius: 18, overflow: 'hidden', position: 'relative' }}>
                 {joinLoading && !joinUrl ? (
                   <div style={{ color: 'white', display: 'grid', placeItems: 'center', height: '100%', fontWeight: 900 }}>
-                    Đang mở MiroTalk Broadcast...
+                    Đang mở ...
                   </div>
                 ) : joinUrl ? (
                   <iframe

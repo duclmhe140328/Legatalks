@@ -398,15 +398,15 @@ export default function AuthEmailPage({ initialMode = 'login' }) {
   const [message, setMessage] = useState('');
 
   const [form, setForm] = useState({
-  phone: '',
-  email: '',
-  displayName: '',
-  password: '',
-  confirmPassword: '',
-  otp: '',
-  account: '',
-  newPassword: '',
-});
+    phone: '',
+    email: '',
+    displayName: '',
+    password: '',
+    confirmPassword: '',
+    otp: '',
+    account: '',
+    newPassword: '',
+  });
 
   useEffect(() => {
     setMode(initialMode || 'login');
@@ -648,12 +648,19 @@ export default function AuthEmailPage({ initialMode = 'login' }) {
 
       <section className="nx-auth-v2__intro">
         <div className="nx-auth-v2__brand">
-          <div className="nx-auth-v2__logo">N</div>
-          <div>
-            <strong>Legatalk Connect</strong>
-            <span>Realtime workspace</span>
-          </div>
-        </div>
+  {/* Bỏ class nx-auth-v2__logo, thay bằng div tự chỉnh kích thước */}
+  <div style={{ width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <img
+      src="/logo.png"
+      alt="Logo"
+      style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+    />
+  </div>
+  <div>
+    <strong>Legatalk Connect</strong>
+    <span>Realtime workspace</span>
+  </div>
+</div>
 
         <div className="nx-auth-v2__hero">
           <div className="nx-auth-v2__pill">● Chat · Meeting · Live · Mini App</div>
